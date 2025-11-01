@@ -1,0 +1,16 @@
+# Mineru Local Installation
+#req: need to have docker desktop installed already
+source: https://opendatalab.github.io/MinerU/quick_start/docker_deployment/
+
+#1. create docker folder
+
+mkdir -p docker 
+
+#2. download mineru
+wget https://gcore.jsdelivr.net/gh/opendatalab/MinerU@master/docker/global/Dockerfile
+
+
+#3. turn on docker desktop
+
+#4.  cd to docker folder
+docker build -t mineru-vllm:latest -f Dockerfile .
