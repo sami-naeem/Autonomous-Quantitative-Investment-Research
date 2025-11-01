@@ -26,3 +26,6 @@ docker run --gpus all `
   --ipc=host `
   -it mineru-vllm:latest `
   /bin/bash
+
+#service one
+mineru-api --host 0.0.0.0 --port 8000
