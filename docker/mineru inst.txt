@@ -12,5 +12,17 @@ wget https://gcore.jsdelivr.net/gh/opendatalab/MinerU@master/docker/global/Docke
 
 #3. turn on docker desktop
 
-#4.  cd to docker folder
+#4.  cd to docker folder, 
+# note: make sure VPN is off otherwise Huggingface might deny access to models
 docker build -t mineru-vllm:latest -f Dockerfile .
+#other option
+docker build --network=host -t mineru-vllm:latest -f Dockerfile .
+
+
+
+docker run --gpus all `
+  --shm-size 32g `
+  -p 30000:30000 -p 7860:7860 -p 8000:8000 `
+  --ipc=host `
+  -it mineru-vllm:latest `
+  /bin/bash
