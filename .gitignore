@@ -1,5 +1,12 @@
 # Environment variables
 .env
 
+# Credentials
+credentials.json
+
 # Papers folder
 /papers
+/temp_papers
+
+# Dev container
+.devcontainer/
