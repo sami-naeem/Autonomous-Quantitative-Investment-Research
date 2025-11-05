@@ -158,8 +158,13 @@ def process_papers_batch(pdf_paths):
     
     input_paths_str = " ".join([f'"{path}"' for path in valid_paths])
     
-    cmd = (f"mineru -p {input_paths_str} -o {Config.LOCAL_OUTPUT_DIR} -b {Config.MINERU_BACKEND} "
-           f"--workers {Config.MINERU_WORKERS}")
+    # For vlm-vllm-engine backend, don't use --workers flag as it's not supported
+    if Config.MINERU_BACKEND == "vlm-vllm-engine":
+        cmd = f"mineru -p {input_paths_str} -o {Config.LOCAL_OUTPUT_DIR} -b {Config.MINERU_BACKEND}"
+    else:
+        cmd = (f"mineru -p {input_paths_str} -o {Config.LOCAL_OUTPUT_DIR} -b {Config.MINERU_BACKEND} "
+               f"--workers {Config.MINERU_WORKERS}")
+    
     logger.info(f"Running MinerU batch: {len(valid_paths)} papers using '{Config.MINERU_BACKEND}' backend")
     logger.debug(f"MinerU command: {cmd}")
     
@@ -180,7 +185,7 @@ def process_papers_batch(pdf_paths):
             paper_name = path.stem
             
             # For vlm-vllm-engine backend, output is in paper_name/vlm/
-            # For other backends, output is directly in paper_name/
+            # Look for any files in that directory structure
             if Config.MINERU_BACKEND == "vlm-vllm-engine":
                 output_dir = Config.LOCAL_OUTPUT_DIR / paper_name / "vlm"
             else:
@@ -189,12 +194,12 @@ def process_papers_batch(pdf_paths):
             logger.debug(f"Checking output for {paper_name} at {output_dir}")
             
             if output_dir.exists():
-                md_files = list(output_dir.glob("*.md"))
-                json_files = list(output_dir.glob("*.json"))
-                total_files = len(md_files) + len(json_files)
+                # Recursively find all files in the vlm directory (includes images/, md files, etc)
+                all_files = list(output_dir.rglob("*"))
+                actual_files = [f for f in all_files if f.is_file()]
                 
-                if total_files > 0:
-                    logger.info(f"Output for {paper_name}: {len(md_files)} markdown files, {len(json_files)} JSON files")
+                if actual_files:
+                    logger.info(f"Output for {paper_name}: {len(actual_files)} files generated")
                     processed.append(paper_name)
                 else:
                     logger.warning(f"No output files generated for {paper_name}")
@@ -301,6 +306,7 @@ def run_pipeline():
             processed_names = process_papers_batch(batch)
             all_processed.extend(processed_names)
             
+            # Only record papers that were actually successfully processed
             if processed_names:
                 record_processed(processed_names)
         
@@ -356,7 +362,7 @@ if __name__ == "__main__":
         import argparse
         parser = argparse.ArgumentParser(description='Process papers from GCS with MinerU')
         parser.add_argument('--batch-size', type=int, help='Number of papers to process in each batch')
-        parser.add_argument('--workers', type=int, help='Number of MinerU worker threads')
+        parser.add_argument('--workers', type=int, help='Number of MinerU worker threads (ignored for vlm-vllm-engine)')
         parser.add_argument('--no-cleanup', action='store_true', help='Skip cleanup of temporary files')
         parser.add_argument('--backend', choices=['pipeline', 'vlm-transformers', 'vlm-vllm-engine'], 
                           help='MinerU backend to use')
