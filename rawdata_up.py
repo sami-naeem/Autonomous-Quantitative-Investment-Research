@@ -67,9 +67,9 @@ class ArxivGCSDownloader:
         # Initialize arXiv client with rate limiting and better retry handling
         # Use larger page_size and more retries per arxiv.py best practices
         client = arxiv.Client(
-            page_size=500,  # Larger page size reduces total requests
+            page_size=50,  # Larger page size reduces total requests
             delay_seconds=0,  # We implement our own rate limiting
-            num_retries=10  # Increased retries for flaky API
+            num_retries=3  # Increased retries for flaky API
         )
         search = arxiv.Search(
             query=f"cat:{category}",
@@ -161,7 +161,7 @@ class ArxivGCSDownloader:
             print(f"\n⚠ Reached end of available papers at index {current_index}")
             print(f"  This category may have ~{current_index} total papers")
             print(f"  ArXiv API details: {e}")
-        
+
         # Print summary
         print(f"\n{'='*60}")
         print(f"Download Summary:")
