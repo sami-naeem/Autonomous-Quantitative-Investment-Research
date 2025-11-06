@@ -64,9 +64,13 @@ class ArxivGCSDownloader:
         if local_temp_storage:
             Path(temp_dir).mkdir(exist_ok=True)
 
-        # Initialize arXiv client with rate limiting
-        # Use delay_seconds=0 as we'll implement our own rate limiting
-        client = arxiv.Client(page_size=100, delay_seconds=0)
+        # Initialize arXiv client with rate limiting and better retry handling
+        # Use larger page_size and more retries per arxiv.py best practices
+        client = arxiv.Client(
+            page_size=500,  # Larger page size reduces total requests
+            delay_seconds=0,  # We implement our own rate limiting
+            num_retries=10  # Increased retries for flaky API
+        )
         search = arxiv.Search(
             query=f"cat:{category}",
             max_results=max_papers + start_index,  # Request total papers including skipped ones
@@ -86,70 +90,77 @@ class ArxivGCSDownloader:
         print(f"Rate limiting: {self.requests_per_burst} requests/burst, {self.burst_sleep}s sleep/burst")
         print(f"Using arXiv's recommended export endpoint\n")
 
-        for result in client.results(search):
-            # Skip papers before start_index
-            if current_index < start_index:
+        try:
+            for result in client.results(search):
+                # Skip papers before start_index
+                if current_index < start_index:
+                    current_index += 1
+                    skipped_count += 1
+                    continue
+
+                # Stop if we've processed max_papers
+                if download_count >= max_papers:
+                    break
+
                 current_index += 1
-                skipped_count += 1
-                continue
 
-            # Stop if we've processed max_papers
-            if download_count >= max_papers:
-                break
+                try:
+                    # Rate limiting: sleep after every burst
+                    if requests_in_burst >= self.requests_per_burst:
+                        time.sleep(self.burst_sleep)
+                        requests_in_burst = 0
 
-            current_index += 1
+                    # Generate filename from paper ID
+                    filename = f"{result.entry_id.split('/abs/')[-1].replace('/', '_')}.pdf"
 
-            try:
-                # Rate limiting: sleep after every burst
-                if requests_in_burst >= self.requests_per_burst:
-                    time.sleep(self.burst_sleep)
-                    requests_in_burst = 0
+                    # Use temporary directory for download
+                    with tempfile.TemporaryDirectory() as tmpdirname:
+                        # Download paper to temp location
+                        temp_path = os.path.join(tmpdirname, filename)
+                        result.download_pdf(dirpath=tmpdirname, filename=filename)
+                        download_count += 1
+                        requests_in_burst += 1
 
-                # Generate filename from paper ID
-                filename = f"{result.entry_id.split('/abs/')[-1].replace('/', '_')}.pdf"
+                        # Upload to GCS
+                        gcs_path = f"{self.gcs_folder}/{filename}"
+                        blob = self.bucket.blob(gcs_path)
 
-                # Use temporary directory for download
-                with tempfile.TemporaryDirectory() as tmpdirname:
-                    # Download paper to temp location
-                    temp_path = os.path.join(tmpdirname, filename)
-                    result.download_pdf(dirpath=tmpdirname, filename=filename)
-                    download_count += 1
-                    requests_in_burst += 1
+                        # Check if file already exists
+                        if blob.exists():
+                            print(f"⊙ [{current_index}] Already exists: {result.title[:50]}... (skipping)")
+                            continue
 
-                    # Upload to GCS
-                    gcs_path = f"{self.gcs_folder}/{filename}"
-                    blob = self.bucket.blob(gcs_path)
+                        # Upload with metadata
+                        blob.metadata = {
+                            'title': result.title,
+                            'authors': ', '.join([author.name for author in result.authors]),
+                            'published': str(result.published),
+                            'arxiv_id': result.entry_id,
+                            'categories': ', '.join(result.categories)
+                        }
 
-                    # Check if file already exists
-                    if blob.exists():
-                        print(f"⊙ [{current_index}] Already exists: {result.title[:50]}... (skipping)")
-                        continue
+                        blob.upload_from_filename(temp_path)
+                        upload_count += 1
 
-                    # Upload with metadata
-                    blob.metadata = {
-                        'title': result.title,
-                        'authors': ', '.join([author.name for author in result.authors]),
-                        'published': str(result.published),
-                        'arxiv_id': result.entry_id,
-                        'categories': ', '.join(result.categories)
-                    }
+                        print(f"✓ [{current_index}] Uploaded: {result.title[:50]}...")
+                        print(f"  → gs://{self.bucket_name}/{gcs_path}")
 
-                    blob.upload_from_filename(temp_path)
-                    upload_count += 1
+                        # Optionally keep local copy
+                        if local_temp_storage:
+                            local_path = os.path.join(temp_dir, filename)
+                            with open(temp_path, 'rb') as src, open(local_path, 'wb') as dst:
+                                dst.write(src.read())
 
-                    print(f"✓ [{current_index}] Uploaded: {result.title[:50]}...")
-                    print(f"  → gs://{self.bucket_name}/{gcs_path}")
+                except Exception as e:
+                    error_count += 1
+                    print(f"✗ [{current_index}] Failed: {result.title[:50] if hasattr(result, 'title') else 'Unknown'}")
+                    print(f"  Error: {e}")
 
-                    # Optionally keep local copy
-                    if local_temp_storage:
-                        local_path = os.path.join(temp_dir, filename)
-                        with open(temp_path, 'rb') as src, open(local_path, 'wb') as dst:
-                            dst.write(src.read())
-
-            except Exception as e:
-                error_count += 1
-                print(f"✗ [{current_index}] Failed: {result.title[:50] if hasattr(result, 'title') else 'Unknown'}")
-                print(f"  Error: {e}")
+        except arxiv.UnexpectedEmptyPageError as e:
+            # This likely means we've reached the end of available papers
+            print(f"\n⚠ Reached end of available papers at index {current_index}")
+            print(f"  This category may have ~{current_index} total papers")
+            print(f"  ArXiv API details: {e}")
         
         # Print summary
         print(f"\n{'='*60}")
