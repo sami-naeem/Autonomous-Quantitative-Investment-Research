@@ -9,6 +9,7 @@ credentials.json
 /temp_papers
 /processed_papers
 /test_output
+/sample out
 
 # Dev container
 .devcontainer/
