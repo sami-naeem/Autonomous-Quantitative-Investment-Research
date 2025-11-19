@@ -10,39 +10,32 @@ agentic-quant-research/
 ├── pyproject.toml
 ├── .gitignore
 ├── .env.example
-│
 ├── src/
 │   └── quant_agent/
 │       ├── __init__.py
-│       │
 │       ├── config/
 │       │   ├── base.yaml
 │       │   ├── dev.yaml
 │       │   └── prod.yaml
-│       │
 │       ├── data/
 │       │   ├── schemas.py
 │       │   └── loaders.py
-│       │
 │       ├── pipelines/
 │       │   ├── paper_inventory_pipeline.py
 │       │   ├── paper_quality_filter_pipeline.py
 │       │   ├── cot_instruction_pipeline.py
 │       │   ├── pdf_embedding_pipeline.py
 │       │   └── finetuning_pipeline.py
-│       │
 │       ├── embeddings/
 │       │   ├── models.py
 │       │   ├── vector_store.py
 │       │   └── index_utils.py
-│       │
 │       ├── agents/
 │       │   ├── base_agent.py
 │       │   ├── research_agent.py
 │       │   ├── replication_agent.py
 │       │   ├── signal_agent.py
 │       │   └── orchestration.py
-│       │
 │       ├── tools/
 │       │   ├── paper_search_tool.py
 │       │   ├── paper_metadata_tool.py
@@ -56,76 +49,67 @@ agentic-quant-research/
 │       │   ├── risk_report_tool.py
 │       │   ├── agent_finetuning_tool.py
 │       │   └── agent_evaluation_tool.py
-│       │
 │       ├── evaluation/
 │       │   ├── ai_judge.py
 │       │   ├── research_scores.py
 │       │   └── reports.py
-│       │
 │       └── utils/
 │           ├── logging.py
 │           ├── paths.py
 │           └── seed_utils.py
-│
 ├── notebooks/
 │   ├── 01_paper_inventory/
-│   │   ├── Paper_Quality_Filter.ipynb
+│   │   └── Paper_Quality_Filter.ipynb
 │   ├── 02_instruction_cot/
 │   │   ├── Embedding_CoT_Instruction_Pipeline.ipynb
-│   │   ├── Copy of QuantAgent-FineTuning Test.ipynb
+│   │   └── Copy of QuantAgent-FineTuning Test.ipynb
 │   ├── 03_pdf_embedding/
-│   │   ├── Embedding_PDF.ipynb
+│   │   └── Embedding_PDF.ipynb
 │   └── 04_architecture_and_planning/
 │       ├── Model_Training_Schematic.ipynb
-│       ├── scratchpads.ipynb
-│
+│       └── scratchpads.ipynb
 ├── docs/
 │   ├── problem-statement/
 │   │   ├── Problem_Statement_and_Situational_Analysis.md
-│   │   ├── Problem Statement & Situational Analysis v1 (1).docx
+│   │   └── Problem Statement & Situational Analysis v1 (1).docx
 │   ├── pitch/
 │   │   ├── Pitch Deck (2).pptx
-│   │   ├── ADSP 34002 IP01 Capstone I.pptx
+│   │   └── ADSP 34002 IP01 Capstone I.pptx
 │   ├── architecture/
 │   │   ├── Model Training Schematic (1).pptx
-│   │   ├── system_design.md
+│   │   └── system_design.md
 │   └── research/
-│       ├── literature_review.md
-│
+│       └── literature_review.md
 ├── data/
 │   ├── raw/
 │   │   ├── arxiv_papers/
 │   │   ├── quantconnect_exports/
-│   │   ├── metadata/
+│   │   └── metadata/
 │   ├── interim/
 │   │   ├── cleaned_papers.parquet
-│   │   ├── quality_scores.parquet
+│   │   └── quality_scores.parquet
 │   ├── processed/
 │   │   ├── filtered_papers.parquet
-│   │   ├── instruct_cot_dataset.parquet
+│   │   └── instruct_cot_dataset.parquet
 │   └── models/
 │       ├── llama_archetype_01/
 │       ├── llama_archetype_02/
-│       ├── tokenizer/
-│
+│       └── tokenizer/
 ├── scripts/
 │   ├── run_paper_inventory.py
 │   ├── run_paper_quality_filter.py
 │   ├── run_cot_instruction_pipeline.py
 │   ├── run_pdf_embedding.py
 │   ├── train_llama_agents.py
-│   ├── evaluate_agents.py
-│
+│   └── evaluate_agents.py
 ├── tests/
 │   ├── test_pipelines.py
 │   ├── test_embeddings.py
 │   ├── test_agents.py
-│   ├── test_tools.py
-│
+│   └── test_tools.py
 └── docker/
     ├── Dockerfile
-    ├── docker-compose.yaml
-
+    └── docker-compose.yaml
 
 
 ## 1. Project Overview
