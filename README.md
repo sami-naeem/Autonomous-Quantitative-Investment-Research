@@ -5,6 +5,7 @@
 
 ## Project Structure
 
+```text
 agentic-quant-research/
 ├── README.md
 ├── pyproject.toml
@@ -110,6 +111,7 @@ agentic-quant-research/
 └── docker/
     ├── Dockerfile
     └── docker-compose.yaml
+```
 
 
 ## 1. Project Overview
@@ -346,4 +348,5 @@ pip install -e .
     #
 
 # Phase 4: Evaluation Pipeline
+
     # eval paper - alejandro
