@@ -313,7 +313,7 @@ cd agentic-quant-research
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-
+```
 
 
 -------------------------------------------------------------------------------------
@@ -350,3 +350,4 @@ pip install -e .
 # Phase 4: Evaluation Pipeline
 
     # eval paper - alejandro
+
