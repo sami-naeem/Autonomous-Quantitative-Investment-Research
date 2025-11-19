@@ -318,7 +318,9 @@ pip install -e .
 
 -------------------------------------------------------------------------------------
 
-## Phase 1: Data Mining 
+# Work in Progress Details
+
+#### Phase 1: Data Mining 
 
     # Download research papers - Seb
         1 - tested local - DONE
@@ -336,18 +338,19 @@ pip install -e .
 
     # Tokenize extracted text to embeddings for RAG. - Campbell
 
-# Phase 2: LLM/Agent Preparation
+#### Phase 2: LLM/Agent Preparation
 
     #  baseline finllamn - alejandro
         prepare top 5 papers -> citations index
         prepare handcraft for fine tuning
     # conferences lookup- ale
 
-# Phase 3: FineTune LLM
+#### Phase 3: FineTune LLM
 
     #
 
-# Phase 4: Evaluation Pipeline
+#### Phase 4: Evaluation Pipeline
 
     # eval paper - alejandro
+
 
