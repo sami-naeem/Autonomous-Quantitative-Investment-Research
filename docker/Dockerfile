@@ -1,3 +1,4 @@
+#mineru dockerfile for gpu with vllm and huggingface models
 # Use the official vllm image for gpu with Ampere architecture and above (Compute Capability>=8.0)
 # Compute Capability version query (https://developer.nvidia.com/cuda-gpus)
 FROM vllm/vllm-openai:v0.10.1.1

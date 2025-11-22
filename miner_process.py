@@ -27,7 +27,8 @@ class Config:
     DESTINATION_BUCKET_NAME = "raw_papers"
     SOURCE_PREFIX = "papers/"
     DEST_PREFIX = "processed/"
-
+    # seminal_factor_papers/
+    ## processed_seminal_factor_papers/
     LOCAL_TEMP_DIR = Path("./temp_papers")
     LOCAL_OUTPUT_DIR = Path("./processed_papers")
 
