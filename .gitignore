@@ -11,6 +11,8 @@ credentials.json
 /test_output
 /sample out
 /.venv311
+/venv
+/.venv
 
 # Dev container
 .devcontainer/
