@@ -1,0 +1,15 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./Agents/agent.py:app"
+  },
+  "env": ".env",
+  "watch_ignore": [
+    ".venv/**",
+    ".venv311/**",
+    "venv/**",
+    "__pycache__/**",
+    "*.pyc",
+    ".git/**"
+  ]
+}

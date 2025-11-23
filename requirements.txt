@@ -1,2 +1,22 @@
 google-cloud-storage
 tqdm
+pandas
+numpy
+scipy
+statsmodels
+qdrant-client
+sentence-transformers
+#langgraph dependencies
+langgraph
+langgraph-prebuilt
+langgraph-sdk
+langgraph-checkpoint-sqlite
+langsmith
+langchain-community
+langchain-core
+langchain-openai
+notebook
+langchain-tavily
+wikipedia
+trustcall
+langgraph-cli[inmem]
