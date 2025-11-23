@@ -10,6 +10,7 @@ credentials.json
 /processed_papers
 /test_output
 /sample out
+/.venv311
 
 # Dev container
 .devcontainer/
