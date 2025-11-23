@@ -13,9 +13,16 @@ credentials.json
 /.venv311
 /venv
 /.venv
+/.langgraph_api
+/Agents/__pycache__
+/Agents/utils/__pycache__
+/tools/__pycache__
+/__pycache__
 
 # Dev container
 .devcontainer/
 2510.21650v1.pdf
 research_tools (1).py
 research_tools.py
+.langgraph_api/.langgraph_checkpoint.1.pckl
+__pycache__/agent.cpython-311.pyc
