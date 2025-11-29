@@ -18,7 +18,7 @@ from sentence_transformers import SentenceTransformer
 
 from langchain_core.tools import tool
 
-
+@tool
 def decile_sorter(
     df: pd.DataFrame,
     signal_col: str = "signal",
@@ -83,7 +83,7 @@ def decile_sorter(
     df = df.groupby(date_col, group_keys=False).apply(_assign_deciles)
     return df
 
-
+@tool  
 def zscore_normalizer(
     df: pd.DataFrame,
     signal_col: str = "signal",
@@ -129,7 +129,7 @@ def zscore_normalizer(
     df = df.groupby(date_col, group_keys=False).apply(_z)
     return df
 
-
+@tool
 def industry_neutralizer(
     df: pd.DataFrame,
     signal_col: str = "signal",
