@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage  # HumanMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END, add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -40,21 +40,22 @@ def agent_node(state: AgentState) -> AgentState:
     return {"messages": [response]}
 
 
-def judge_node(state: AgentState) -> AgentState:
-    """
-    AI LLM judge node. Evaluates the agent's work and provides assessment.
-    This runs after the main agent completes its reasoning.
-    """
-    judge_llm = ChatOpenAI(model="gpt-5.1", temperature=0.0)
-
-    # Create a judge prompt to evaluate the previous agent's output
-    judge_prompt = HumanMessage(
-        content="As an AI judge, evaluate the quality and correctness of the previous analysis. "
-                "Provide a brief assessment of the approach, methodology, and conclusions."
-    )
-
-    response = judge_llm.invoke(state["messages"] + [judge_prompt])
-    return {"messages": [response]}
+# OLD Judge Node
+# def judge_node(state: AgentState) -> AgentState:
+#     """
+#     AI LLM judge node. Evaluates the agent's work and provides assessment.
+#     This runs after the main agent completes its reasoning.
+#     """
+#     judge_llm = ChatOpenAI(model="gpt-5.1", temperature=0.0)
+#
+#     # Create a judge prompt to evaluate the previous agent's output
+#     judge_prompt = HumanMessage(
+#         content="As an AI judge, evaluate the quality and correctness of the previous analysis. "
+#                 "Provide a brief assessment of the approach, methodology, and conclusions."
+#     )
+#
+#     response = judge_llm.invoke(state["messages"] + [judge_prompt])
+#     return {"messages": [response]}
 
 
 # Tool Node
@@ -65,25 +66,25 @@ graph = StateGraph(AgentState)
 
 graph.add_node("agent", agent_node)
 graph.add_node("tools", tool_node)
-graph.add_node("judge", judge_node)
+# OLD graph.add_node("judge", judge_node)
 
 graph.set_entry_point("agent")
 
-# If the LLM asks for tools, go to tool node; otherwise go to judge.
+# If the LLM asks for tools, go to tool node; otherwise end.
 graph.add_conditional_edges(
     "agent",
     tools_condition,
     {
         "tools": "tools",
-        "__end__": "judge",
+        "__end__": END,
     },
 )
 
 # After tools execute, send results back into the agent for reflection / next step.
 graph.add_edge("tools", "agent")
 
-# After judge completes, end the workflow.
-graph.add_edge("judge", END)
+# # OLD After judge completes, end the workflow.
+# graph.add_edge("judge", END)
 
 app = graph.compile()
 
