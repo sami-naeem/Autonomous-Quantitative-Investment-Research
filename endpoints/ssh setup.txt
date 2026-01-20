@@ -1,0 +1,9 @@
+these commands to ssh in and copy setup_lambda.sh into gpu instance and then run setup_lambda
+
+ssh -i "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\sebas.pem" ubuntu@[ipaddy]
+
+scp -i "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\sebas.pem" "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research\setup_lambda.sh" ubuntu@[ipaddy]]:~/setup_lambda.sh
+
+
+one liner:
+scp -i "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\sebas.pem" "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research\setup_lambda.sh" ubuntu@141.148.14.166:~/setup_lambda.sh && ssh -i "c:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\sebas.pem" ubuntu@[ipaddy]] "chmod +x ~/setup_lambda.sh && ~/setup_lambda.sh"
