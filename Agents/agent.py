@@ -128,25 +128,29 @@ def get_storage_client():
 llm = ChatOpenAI(model="gpt-5.1", temperature=0.0)
 llm_with_tools = llm.bind_tools(TOOLS)
 
+# vLLM Lambda endpoint configuration
+LAMBDA_ENDPOINT = "http://150.136.248.73:8000/v1"  # Lambda GPU instance
+LAMBDA_API_KEY = "token-abc123"
+
 # vLLM multi-LoRA endpoint LLMs
 base_llm = ChatOpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="token-abc123",
+    base_url=LAMBDA_ENDPOINT,
+    api_key=LAMBDA_API_KEY,
     model="meta-llama/Llama-3.2-3B-Instruct",
     temperature=0.7,
 )
 
 finllama_llm = ChatOpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="token-abc123",
-    model="finllama",
+    base_url=LAMBDA_ENDPOINT,
+    api_key=LAMBDA_API_KEY,
+    model="finllama",  # When LoRA is enabled
     temperature=0.7,
 )
 
 custom_llm = ChatOpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="token-abc123",
-    model="custom",
+    base_url=LAMBDA_ENDPOINT,
+    api_key=LAMBDA_API_KEY,
+    model="custom",  # When custom LoRA is enabled
     temperature=0.7,
 )
 

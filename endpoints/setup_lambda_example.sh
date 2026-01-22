@@ -10,7 +10,7 @@ echo "=========================================="
 
 # 0. Install Lambda Guest Agent (for metrics monitoring)
 echo ""
-echo "[0/7] Installing Lambda Guest Agent..."
+echo "[0/9] Installing Lambda Guest Agent..."
 curl -L https://lambdalabs-guest-agent.s3.us-west-2.amazonaws.com/scripts/install.sh | sudo bash
 
 echo ""
@@ -18,51 +18,66 @@ echo "Verifying Guest Agent status..."
 sudo systemctl --no-pager status lambda-guest-agent* || echo "Warning: Guest Agent may not have started correctly"
 
 # Set your Hugging Face token here
-HF_TOKEN="REDACTED_FOR_SECURITY"
+HF_TOKEN="YOUR_HF_TOKEN_HERE"
 
-# 1. Install vLLM and Hugging Face Hub with CLI
+# 1. Install uv package manager for fast installations
 echo ""
-echo "[1/7] Installing vLLM and Hugging Face Hub..."
-pip install --upgrade vllm huggingface_hub[cli]
-pip install "numpy<2"
+echo "[1/9] Installing uv package manager..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
 
-# 2. Login to Hugging Face
+# 2. Create virtual environment
 echo ""
-echo "[2/7] Logging into Hugging Face..."
+echo "[2/9] Creating virtual environment..."
+uv venv ~/vllm_env
+source ~/vllm_env/bin/activate
+
+# 3. Install vLLM and Hugging Face Hub using uv
+echo ""
+echo "[3/9] Installing vLLM and Hugging Face Hub with uv..."
+uv pip install --upgrade vllm huggingface_hub
+uv pip install "numpy<2"
+
+# 4. Login to Hugging Face
+echo ""
+echo "[4/9] Logging into Hugging Face..."
 # Set HF_TOKEN as environment variable (used by huggingface_hub automatically)
 export HF_TOKEN=$HF_TOKEN
 # Programmatic login using Python
 python -c "from huggingface_hub import login; login(token='$HF_TOKEN')"
 
-# 3. Create directory structure
+# 5. Create directory structure
 echo ""
-echo "[3/7] Creating directory structure..."
+echo "[5/9] Creating directory structure..."
 mkdir -p ~/lora_adapters/custom
 mkdir -p ~/models
 mkdir -p ~/scripts
 
-# 4. Download LoRA adapters (update repo names as needed)
+# 6. Download LoRA adapters (update repo names as needed)
 echo ""
-echo "[4/7] Downloading LoRA adapters..."
-# Syntax: hf download <repo_id> --local-dir <path>
+echo "[6/9] Downloading LoRA adapters..."
+# Syntax: huggingface-cli download <repo_id> --local-dir <path>
 # Uncomment and update these with your actual repo names:
-# hf download <YOUR_CUSTOM_REPO> --local-dir ~/lora_adapters/custom
+# huggingface-cli download <YOUR_CUSTOM_REPO> --local-dir ~/lora_adapters/custom
 
-# 5. Download base model (if needed)
+# 7. Download base model (if needed)
 echo ""
-echo "[5/7] Downloading base model..."
-hf download meta-llama/Llama-3.2-3B-Instruct --local-dir ~/models/Llama-3.2-3B-Instruct
-hf download TheFinAI/FinLLaVA --local-dir ~/models/FinLLaVA
-hf download TheFinAI/Fin-o1-14B --local-dir ~/models/Fin-o1-14B
-hf download DavidAU/Llama3.3-8B-Instruct-Thinking-Claude-4.5-Opus-High-Reasoning --local-dir ~/models/Llama3
+echo "[7/9] Downloading base model..."
+huggingface-cli download meta-llama/Llama-3.2-3B-Instruct --local-dir ~/models/Llama-3.2-3B-Instruct
+huggingface-cli download TheFinAI/FinLLaVA --local-dir ~/models/FinLLaVA
+huggingface-cli download TheFinAI/Fin-o1-14B --local-dir ~/models/Fin-o1-14B
+huggingface-cli download DavidAU/Llama3.3-8B-Instruct-Thinking-Claude-4.5-Opus-High-Reasoning --local-dir ~/models/Llama3
 
-# 6. Create vLLM startup script
+# 8. Create vLLM startup script
 echo ""
-echo "[6/7] Creating vLLM startup script..."
+echo "[8/9] Creating vLLM startup script..."
 cat > ~/scripts/start_vllm.sh << 'EOF'
 #!/bin/bash
 # vLLM Multi-LoRA Server Startup Script
 # Configured for external access from anywhere (Colab, etc.)
+
+# Activate virtual environment
+source $HOME/vllm_env/bin/activate
 
 # Configuration variables
 BASE_MODEL="$HOME/models/Llama3"
@@ -104,9 +119,9 @@ EOF
 # Make vLLM script executable
 chmod +x ~/scripts/start_vllm.sh
 
-# 7. Final verification
+# 9. Final verification
 echo ""
-echo "[7/7] Final verification..."
+echo "[9/9] Final verification..."
 echo "Checking Lambda Guest Agent status..."
 sudo systemctl --no-pager status lambda-guest-agent* || true
 
@@ -124,14 +139,10 @@ echo "  ~/lora_adapters/custom"
 echo "  ~/models"
 echo "  ~/scripts"
 echo ""
-echo "Next steps:"
-echo "  1. DONE Update HF_TOKEN in this script with your actual token"
-echo "  2. DONE Models will be downloaded automatically"
-echo "  3. Run: ~/scripts/start_vllm.sh to start the vLLM server"
+echo "=========================================="
+echo "Starting vLLM server..."
+echo "=========================================="
 echo ""
-echo "To run vLLM server:"
-echo "  cd ~/scripts && ./start_vllm.sh"
-echo ""
-echo "Or run in background with nohup:"
-echo "  nohup ~/scripts/start_vllm.sh > ~/vllm.log 2>&1 &"
-echo ""
+
+# Start vLLM server
+~/scripts/start_vllm.sh

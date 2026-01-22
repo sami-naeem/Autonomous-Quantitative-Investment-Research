@@ -1,12 +1,18 @@
 Step 1: Copy the script to the remote server
 
+scp -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" "S:/Data Science/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh" ubuntu@150.136.42.119:~/setup_lambda.sh
+
+
 
 scp -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" "S:/Data Science/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh" ubuntu@150.136.248.73:~/setup_lambda.sh
 
 Step 2: SSH into the server and run the script manually
 
+it goes: ssh -i path [sshaddy]
 
-ssh -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" ubuntu@150.136.248.73
+ssh -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" ubuntu@
+
+
 Then once you're logged in, run these commands:
 
 
@@ -19,6 +25,8 @@ chmod +x ~/setup_lambda.sh
 # Run the script
 bash -x ~/setup_lambda.sh
 
+
+old commands: 
 scp -i "S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem" "S:\Data Science\Autonomous-Quantitative-Investment-Research\endpoints\ssh setup.txt" ubuntu@150.136.248.73:~/setup_lambda.sh && ssh -i "S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem" ubuntu@150.136.248.73 "chmod +x ~/setup_lambda.sh && ~/setup_lambda.sh"
 
 
