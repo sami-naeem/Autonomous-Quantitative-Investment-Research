@@ -4,7 +4,11 @@
 
 1. **Environment Setup**
    - Ensure Python 3.8+ is installed
-   - Install all dependencies: `pip install -r requirements.txt`
+   - Install uv (fast package manager): `pip install uv`
+   - Install all dependencies: `uv pip install -r requirements.txt`
+   if needed
+   - pip install -U "langgraph-cli[inmem]"
+
    - Create a `.env` file in the project root (see `.env.example` for template)
 
 2. **Required Environment Variables**
@@ -34,15 +38,31 @@
 
 ## Running the Agent
 
-### Method 1: Direct Python Execution (Recommended)
+### Method 1: LangGraph Studio UI (Recommended)
+
 ```bash
-cd "C:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research"
+cd "C:\Users\river\Capstone I\Autonomous-Quantitative-Investment-Research"
+langgraph dev
+```
+
+This starts a local development server with a visual UI at `http://127.0.0.1:8123`:
+
+- Interactive graph visualization
+- Step-through debugging
+- Real-time state inspection
+- Hot-reload on code changes
+
+### Method 2: Direct Python Execution
+
+```bash
+cd "C:\Users\river\Capstone I\Autonomous-Quantitative-Investment-Research"
 PYTHONPATH=. python Agents/agent.py
 ```
 
-### Method 2: As a Python Module
+### Method 3: As a Python Module
+
 ```bash
-cd "C:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research"
+cd "C:\Users\river\Capstone I\Autonomous-Quantitative-Investment-Research"
 python -m Agents.agent
 ```
 

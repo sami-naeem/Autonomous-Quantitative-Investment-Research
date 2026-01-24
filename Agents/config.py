@@ -42,10 +42,14 @@ class LLMConfig:
     LAMBDA_TEMPERATURE = 0.7
 
     # Workflow-specific model assignments
-    # Change these to switch which model is used for each task
-    SIGNAL_EXTRACTION_MODEL = "finllama"  # Options: "finllama", "custom", "base", "openai"
-    ANALYSIS_MODEL = "openai"  # For future analysis tasks
-    ORCHESTRATION_MODEL = "openai"  # For agent orchestration
+    # Change this single setting to switch ALL tasks to a different model
+    # Options: "finllama", "custom", "base", "openai"
+    ACTIVE_MODEL = "openai"
+
+    # All tasks use the same model for consistent testing/comparison
+    SIGNAL_EXTRACTION_MODEL = ACTIVE_MODEL
+    ANALYSIS_MODEL = ACTIVE_MODEL
+    ORCHESTRATION_MODEL = ACTIVE_MODEL
 
 
 class LangSmithConfig:

@@ -59,32 +59,22 @@ finllama_llm = get_finllama_llm()
 custom_llm = get_custom_llm()
 
 
-def get_llm_for_task(task: str):
+def get_llm_by_name(model_name: str):
     """
-    Get the appropriate LLM for a specific task based on configuration.
+    Get an LLM instance by its name.
 
-    This centralizes LLM selection, making it easy to change which model
-    is used for different parts of the workflow.
+    This is the primary function for getting LLMs based on user selection.
 
     Args:
-        task: The task name. Options: "signal_extraction", "analysis", "orchestration"
+        model_name: The model to use. Options: "openai", "finllama", "base", "custom"
 
     Returns:
-        Configured ChatOpenAI instance for the task
+        Configured ChatOpenAI instance
 
     Example:
-        >>> signal_llm = get_llm_for_task("signal_extraction")
+        >>> signal_llm = get_llm_by_name("openai")
         >>> response = signal_llm.invoke("Extract signals from...")
     """
-    task_to_config = {
-        "signal_extraction": LLMConfig.SIGNAL_EXTRACTION_MODEL,
-        "analysis": LLMConfig.ANALYSIS_MODEL,
-        "orchestration": LLMConfig.ORCHESTRATION_MODEL,
-    }
-
-    model_name = task_to_config.get(task, "openai")
-
-    # Map model names to LLM instances
     model_map = {
         "finllama": finllama_llm,
         "custom": custom_llm,
@@ -93,3 +83,26 @@ def get_llm_for_task(task: str):
     }
 
     return model_map.get(model_name, llm)
+
+
+def get_llm_for_task(task: str):
+    """
+    Get the appropriate LLM for a specific task based on configuration.
+
+    NOTE: This function uses config-based model selection. For user-selected
+    models at runtime, use get_llm_by_name() instead.
+
+    Args:
+        task: The task name. Options: "signal_extraction", "analysis", "orchestration"
+
+    Returns:
+        Configured ChatOpenAI instance for the task
+    """
+    task_to_config = {
+        "signal_extraction": LLMConfig.SIGNAL_EXTRACTION_MODEL,
+        "analysis": LLMConfig.ANALYSIS_MODEL,
+        "orchestration": LLMConfig.ORCHESTRATION_MODEL,
+    }
+
+    model_name = task_to_config.get(task, "openai")
+    return get_llm_by_name(model_name)
