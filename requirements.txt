@@ -10,7 +10,7 @@ sentence-transformers
 langgraph
 langgraph-prebuilt
 langgraph-sdk
-langgraph-checkpoint-sqlite
+# langgraph-checkpoint-sqlite  # Commented out - conflicts with langgraph-cli[inmem]
 langsmith
 langchain-community
 langchain-core
@@ -20,3 +20,5 @@ langchain-tavily
 wikipedia
 trustcall
 langgraph-cli[inmem]
+uv
+
