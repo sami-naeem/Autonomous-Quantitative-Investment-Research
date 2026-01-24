@@ -1,0 +1,112 @@
+# Running the Autonomous Quantitative Investment Research Agent
+
+## Prerequisites
+
+1. **Environment Setup**
+   - Ensure Python 3.8+ is installed
+   - Install all dependencies: `pip install -r requirements.txt`
+   - Create a `.env` file in the project root (see `.env.example` for template)
+
+2. **Required Environment Variables**
+   Edit `.env` file with your credentials:
+   ```
+   # Google Cloud Storage
+   GCS_BUCKET_NAME=raw_papers
+   GOOGLE_APPLICATION_CREDENTIALS=path/to/your-service-account-key.json
+
+   # OpenAI API
+   OPENAI_API_KEY=your-openai-api-key
+
+   # LangSmith (for tracing/monitoring)
+   LANGCHAIN_TRACING_V2=true
+   LANGCHAIN_API_KEY=your-langsmith-api-key
+   LANGCHAIN_PROJECT=autonomous-quant-research
+
+   # vLLM Lambda Endpoint
+   LAMBDA_ENDPOINT=http://150.136.248.73:8000/v1
+   LAMBDA_API_KEY=token-abc123
+   ```
+
+3. **GCS Authentication**
+   - Download your service account key from Google Cloud Console
+   - Place it in the project root directory
+   - Update the path in `.env`
+
+## Running the Agent
+
+### Method 1: Direct Python Execution (Recommended)
+```bash
+cd "C:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research"
+PYTHONPATH=. python Agents/agent.py
+```
+
+### Method 2: As a Python Module
+```bash
+cd "C:\Users\river\OneDrive\Documents\Data Science\Masters Science - DS\Capstone I\Autonomous-Quantitative-Investment-Research"
+python -m Agents.agent
+```
+
+## Project Structure (After Refactoring)
+
+```
+Agents/
+├── agent.py           # Main orchestration file (clean, modular)
+├── config.py          # All configuration settings from .env
+├── llm_config.py      # LLM initialization and configuration
+├── gcs_utils.py       # Google Cloud Storage utilities
+├── nodes.py           # LangGraph workflow nodes
+└── utils/
+    └── tools.py       # Agent tools
+```
+
+## Viewing LangSmith Traces
+
+After running the agent with `LANGCHAIN_TRACING_V2=true`:
+1. Go to https://smith.langchain.com/
+2. Login with your LangSmith account
+3. Select the project: "autonomous-quant-research"
+4. View your agent runs and traces
+
+## Workflow Overview
+
+The agent performs the following steps:
+1. **Authenticate with GCS** - Connects to Google Cloud Storage
+2. **Select Paper** - Lists available papers and selects one
+3. **Download Paper** - Downloads the markdown content
+4. **Extract Signals** - Uses FinLLaMA to extract trading signals
+5. **Display Results** - Shows the paper name, model used, and extracted signals
+
+## Troubleshooting
+
+### Issue: Module not found errors
+**Solution**: Use `PYTHONPATH=. python Agents/agent.py` to ensure Python can find the Agents module
+
+### Issue: GCS authentication failed
+**Solution**:
+- Check that your service account key path is correct in `.env`
+- Ensure the file exists and has valid credentials
+- Verify you have the correct permissions for the GCS bucket
+
+### Issue: Not seeing LangSmith traces
+**Solution**:
+- Verify `LANGCHAIN_TRACING_V2=true` in `.env`
+- Check that `LANGCHAIN_API_KEY` is set correctly
+- Ensure you're logged into https://smith.langchain.com/
+
+### Issue: vLLM endpoint connection errors
+**Solution**:
+- Verify the Lambda endpoint is running
+- Check that the endpoint URL and API key are correct in `.env`
+- Test the endpoint with: `curl http://150.136.248.73:8000/v1/models`
+
+## For Classmates/Team Members
+
+1. Clone the repository
+2. Copy `.env.example` to `.env`
+3. Get the GCS service account key from the team lead
+4. Get the OpenAI and LangSmith API keys from the team lead
+5. Follow the "Running the Agent" instructions above
+
+---
+Last Updated: 2026-01-23
+Updated by: Claude Code Refactoring
