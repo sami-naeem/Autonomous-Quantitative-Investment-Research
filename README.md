@@ -325,32 +325,33 @@ pip install -e .
     # Download research papers - Seb
         1 - tested local - DONE
         2 - upload to GCS - Done
-
     # Extract with MinerU - Seb
         1- Test Mineru Locally using vLLM and two other services. - DONE 
         2- uploaded via Gradio UI - DONE
         3- setup pipeline to use mineru and upload to GCS - done
-
     # Data PRocess in GCS - Sami
         pipeline to convert processed papers into a cleaner folder structure 
-
-    # paper quality control- filter bad or poor quality papers -  Campbell
-
+    # paper quality control- filter bad or poor quality papers -  Campbell/Ale - DONE
     # Tokenize extracted text to embeddings for RAG. - Campbell
 
 #### Phase 2: LLM/Agent Preparation
 
-    #  baseline finllamn - alejandro
+    #  baseline finllamn - alejandro - DONE
         prepare top 5 papers -> citations index
         prepare handcraft for fine tuning
-    # conferences lookup- ale
-
-#### Phase 3: FineTune LLM
-
-    #
-
-#### Phase 4: Evaluation Pipeline
+    # conferences lookup- ale DONE
+    # outline llama agents for agentic arch, MM POC - Alejandro DONE
+    # RAG pipeline - Campbell - DONE
+    # Llama Endpoints Serving - Sebastian - DONE
+    # outline entire arch - Team - DONE
+#### Phase 3: FineTune LLM (Jan-Feb)
+    # convert mm poc into working langgraph agents - Sami + Sebastian 
+    # Finetuning llama and hyper param tuning - campbell
+    # integrate rag int agentic flow - 
+    # MM POC of Eval flow - Ale
+#### Phase 4: Evaluation Pipeline (Feb-Mar)
 
     # eval paper - alejandro
+
 
 
