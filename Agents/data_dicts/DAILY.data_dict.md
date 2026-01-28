@@ -1,0 +1,7 @@
+- <b>ev</b> : Enterprise Value - Daily : Enterprise value is a measure of the value of a business as a whole; calculated as [MarketCap] plus [DebtUSD] minus [CashnEqUSD]. [MarketCap] is calculated by us, and the remaining figures are sourced from the most recent SEC form 10 filings. 
+- <b>evebit</b> : Enterprise Value over EBIT - Daily : Measures the ratio between [EV] and [EBITUSD]. EBITUSD is derived from the most recent SEC form 10 filings. 
+- <b>evebitda</b> : Enterprise Value over EBITDA - Daily : Measures the ratio between [EV] and [EBITDAUSD]. EBITDAUSD is derived from the most recent SEC form 10 filings. 
+- <b>marketcap</b> : Market Capitalization - Daily : Represents the product of [SharesBas]; [Price] and [ShareFactor]. [SharesBas] is sourced from the most recent SEC form 10 filing. 
+- <b>pb</b> : Price to Book Value - Daily : Measures the ratio between [MarketCap] and [EquityUSD]. [EquityUSD] is sourced from the most recent SEC form 10 filing. 
+- <b>pe</b> : Price Earnings (Damodaran Method) - Daily : Measures the ratio between [MarketCap] and [NetIncCmnUSD]. [NetIncCmnUSD] is sourced from the most recent SEC form 10 filings. 
+- <b>ps</b> : Price Sales (Damodaran Method) - Daily : Measures the ratio between [MarketCap] and [RevenueUSD]. [RevenueUSD] is sourced from the most recent SEC form 10 filings.

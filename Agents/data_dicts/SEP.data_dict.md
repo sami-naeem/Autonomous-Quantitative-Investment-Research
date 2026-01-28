@@ -1,0 +1,5 @@
+- <b>open</b> : Open Price - Split Adjusted : The opening share price, adjusted for stock splits and stock dividends. 
+- <b>high</b> : High Price - Split Adjusted : The high share price, adjusted for stock splits and stock dividends. 
+- <b>low</b> : Low Price - Split Adjusted : The low share price, adjusted for stock splits and stock dividends. 
+- <b>close</b> : Close Price - Split Adjusted : The open share closing, adjusted for stock splits and stock dividends. 
+- <b>volume</b> : Volume - Split Adjusted : The traded volume, adjusted for stock splits and stock dividends.

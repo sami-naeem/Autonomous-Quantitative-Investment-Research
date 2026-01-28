@@ -29,3 +29,4 @@ __pycache__/agent.cpython-311.pyc
 sebas_helper_func
 mineru_pipeline.log
 mineru_pipeline.log
+credentials_gcp.json
