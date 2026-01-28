@@ -6,19 +6,25 @@ scipy
 statsmodels
 qdrant-client
 sentence-transformers
-#langgraph dependencies
-langgraph
+# langgraph dependencies (keep these in sync)
+langgraph>=0.2.0
+langgraph-api>=0.7.0
+langgraph-cli[inmem]>=0.1.0
 langgraph-prebuilt
-langgraph-sdk
+langgraph-sdk>=0.1.0
+langgraph-checkpoint>=2.0.0
 # langgraph-checkpoint-sqlite  # Commented out - conflicts with langgraph-cli[inmem]
+
+# langchain dependencies
 langsmith
 langchain-community
 langchain-core
 langchain-openai
-notebook
 langchain-tavily
+
+# other
+notebook
 wikipedia
 trustcall
-langgraph-cli[inmem]
 uv
 
