@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from langchain_core.messages import HumanMessage
-from Agents.agent import app
+from Agents.agent_original_v2 import app
 
 
 def print_result(result, test_name):
