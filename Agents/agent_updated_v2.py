@@ -39,15 +39,6 @@ from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_cli
 from Agents.config import GCSConfig
 from Agents.llm_config import get_llm_by_name
 
-## ---------------------------------------------------------------------
-## API keys / credentials
-## ---------------------------------------------------------------------
-
-## Sharadar / data access:
-## This agent only *plans* data retrieval and generates code stubs. If you later add
-## actual Sharadar access (e.g., GCS parquet reads, BigQuery, etc.), put credentials
-## in .env and wire them into the execution layer, not the planning layer.
-## ---------------------------------------------------------------------
 
 # Setup logging
 logging.basicConfig(
