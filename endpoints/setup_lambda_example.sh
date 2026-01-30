@@ -46,7 +46,7 @@ source ~/vllm_env/bin/activate
 echo ""
 echo "[3/9] Installing vLLM and Hugging Face Hub with uv..."
 uv pip install --upgrade vllm huggingface_hub
-uv pip install "numpy<2"
+uv pip install "numpy>1.22.4"
 
 # 4. Login to Hugging Face
 echo ""

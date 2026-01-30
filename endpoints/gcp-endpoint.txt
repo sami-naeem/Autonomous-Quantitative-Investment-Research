@@ -1,0 +1,24 @@
+Copy the script to the VM: You can either:
+Paste the script directly into the SSH terminal after typing nano setup_vllm.sh and then saving (Ctrl+O, Enter, Ctrl+X).
+Use gcloud compute scp from your local machine if you have the Google Cloud SDK installed. For example:
+gcloud compute scp /path/to/your/script.sh your-instance-name:~/setup_vllm.sh --zone=your-zone
+Generated code may be subject to license restrictions not shown here. Use code with care. Learn more 
+
+Replace /path/to/your/script.sh , your-instance-name , and your-zone accordingly.
+Make the script executable:
+chmod +x setup_vllm.sh
+Generated code may be subject to license restrictions not shown here. Use code with care. Learn more 
+
+Execute the script:
+./setup_vllm.sh
+Generated code may be subject to license restrictions not shown here. Use code with care. Learn more 
+
+The script will then proceed to install vLLM , log into Hugging Face, create directories, and download models and adapters as defined in your script.
+Important Considerations:
+
+Hugging Face Token: Ensure your HF_TOKEN in the script is valid and has the necessary permissions to download the specified models.
+LoRA Adapters: Remember to uncomment and update the hf download commands for your specific LoRA adapters in step 4 of your script.
+Model Size: Downloading large models (like Llama-3-8B) will take time and consume significant disk space. Make sure your VM's boot disk is adequately sized.
+Network Performance: The download speed of models depends on your VM's network performance.
+Background Execution: After the setup is complete, you'll likely want to run the start_vllm.sh script in the background using nohup as suggested in your script: nohup ~/scripts/start_vllm.sh > ~/vllm.log 2>&1 & This ensures the server continues to run even if your SSH session disconnects.
+Firewall Rules for vLLM API: If you want to access the vLLM API from outside the VM (e.g., from your local machine or another application), you'll need to create a firewall rule in your Google Cloud project to allow incoming TCP traffic on port 8000 to your VM instance.
