@@ -1,20 +1,39 @@
-Step 1: Copy the script to the remote server
+# ============================================
+# CONFIGURATION - Update IP each time you boot
+# ============================================
+IP=129.213.80.188
 
-scp -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" "S:/Data Science/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh" ubuntu@150.136.42.119:~/setup_lambda.sh
+# Key paths
+KEY_TOWER="S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem"
+KEY_LAPTOP="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/sebas.pem"
+
+# Script path
+SCRIPT="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh"
+
+# ============================================
+# COMMANDS
+# ============================================
+
+# Step 1: Copy the script to the remote server
+
+# Tower:
+scp -i "$KEY_TOWER" "$SCRIPT" ubuntu@$IP:~/setup_lambda.sh
+
+# Laptop:
+scp -i "$KEY_LAPTOP" "$SCRIPT" ubuntu@$IP:~/setup_lambda.sh
+
+# Step 2: SSH into the server
+
+# Tower:
+ssh -i "$KEY_TOWER" ubuntu@$IP
+
+# Laptop:
+ssh -i "$KEY_LAPTOP" ubuntu@$IP
 
 
-
-scp -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" "S:/Data Science/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh" ubuntu@150.136.248.73:~/setup_lambda.sh
-
-Step 2: SSH into the server and run the script manually
-
-it goes: ssh -i path [sshaddy]
-
-ssh -i "S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem" ubuntu@
-
-
-Then once you're logged in, run these commands:
-
+# ============================================
+# Step 3: Once logged in, run these on server
+# ============================================
 
 # Fix line endings (if needed)
 sed -i 's/\r$//' ~/setup_lambda.sh
@@ -24,12 +43,4 @@ chmod +x ~/setup_lambda.sh
 
 # Run the script
 bash -x ~/setup_lambda.sh
-
-
-old commands: 
-scp -i "S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem" "S:\Data Science\Autonomous-Quantitative-Investment-Research\endpoints\ssh setup.txt" ubuntu@150.136.248.73:~/setup_lambda.sh && ssh -i "S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem" ubuntu@150.136.248.73 "chmod +x ~/setup_lambda.sh && ~/setup_lambda.sh"
-
-
-
-
 
