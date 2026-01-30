@@ -30,3 +30,5 @@ sebas_helper_func
 mineru_pipeline.log
 mineru_pipeline.log
 credentials_gcp.json
+endpoints/setup_lambda.sh
+endpoints/setup_lambda.sh
