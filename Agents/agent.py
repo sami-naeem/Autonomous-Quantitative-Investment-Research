@@ -308,6 +308,9 @@ def _run_react_json_agent(
             for tc in tool_calls:
                 name = tc.get("name")
                 args = tc.get("args", {}) or {}
+                # Handle nested properties format (LLaMA sometimes wraps args in 'properties')
+                if "properties" in args and isinstance(args["properties"], dict):
+                    args = args["properties"]
                 tool_id = tc.get("id")
 
                 if name not in tool_map:
