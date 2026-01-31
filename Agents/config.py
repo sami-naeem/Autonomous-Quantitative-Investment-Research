@@ -30,13 +30,16 @@ class LLMConfig:
     MAIN_TEMPERATURE = 0.0
 
     # vLLM Lambda endpoint
-    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://150.136.248.73:8000/v1")
+    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://150.136.95.215:8000/v1")
     LAMBDA_API_KEY = os.getenv("LAMBDA_API_KEY", "token-abc123")
 
-    # Model names
-    BASE_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-    FINLLAMA_MODEL = "finllama"
-    CUSTOM_MODEL = "custom"
+    # Model base path on Lambda server
+    MODEL_BASE_PATH = "/home/ubuntu/models"
+
+    # Model names from .env (construct full paths)
+    BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3-8b')}"
+    FINLLAMA_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('FINLLAMA_MODEL_NAME', 'finllama')}"
+    CUSTOM_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('CUSTOM_MODEL_NAME', 'custom')}"
 
     # Model temperature
     LAMBDA_TEMPERATURE = 0.7
