@@ -939,6 +939,10 @@ def build_graph() -> StateGraph:
     return graph.compile()
 
 
+# Patch for LLaMA 3 single tool-call constraint (must run before graph is used)
+from Agents.react_single_tool import patch_agent_module
+patch_agent_module()
+
 # Build the application
 app = build_graph()
 
