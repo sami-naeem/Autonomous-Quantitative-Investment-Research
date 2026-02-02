@@ -2,8 +2,18 @@
 
 ## Prerequisites
 
+activate conda or python env:
+
+In PowerShell:
+.\.venv311\Scripts\Activate.ps1
+In Command Prompt:
+.\.venv311\Scripts\activate.bat
+In Git Bash:
+source .venv311/Scripts/activate
+source D:/Anaconda/Scripts/activate SebbyDS
+
 1. **Environment Setup**
-   - Ensure Python 3.8+ is installed
+   - Ensure Python 3.11+ is installed
    - Install uv (fast package manager): `pip install uv`
    - Install all dependencies: `uv pip install -r requirements.txt`
    if needed
@@ -26,8 +36,8 @@
    LANGCHAIN_API_KEY=your-langsmith-api-key
    LANGCHAIN_PROJECT=autonomous-quant-research
 
-   # vLLM Lambda Endpoint
-   LAMBDA_ENDPOINT=http://150.136.248.73:8000/v1
+   # vLLM Lambda Endpoint (THIS NEEDS to be updated anytime we reboot lambda)
+   LAMBDA_ENDPOINT=http://xxxx.xx.x.x:8000/v1
    LAMBDA_API_KEY=token-abc123
    ```
 
