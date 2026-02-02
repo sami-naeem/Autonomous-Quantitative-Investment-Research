@@ -13,7 +13,7 @@ load_dotenv(dotenv_path=env_path)
 
 class GCSConfig:
     """Google Cloud Storage configuration"""
-    PROJECT_ID = "seraphic-ripple-476917-i5"
+    PROJECT_ID = "agentic-investment-research"
     SOURCE_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "investment-research").strip()
     SOURCE_PREFIX = "processed/"  # Where processed papers with markdown are stored
     LOCAL_TEMP_DIR = Path("./temp_papers")
