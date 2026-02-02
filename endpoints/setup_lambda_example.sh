@@ -14,8 +14,8 @@ echo "=========================================="
 HF_TOKEN="YOUR_HF_TOKEN_HERE"
 
 # Base model configuration
-BASE_MODEL_REPO="meta-llama/Meta-Llama-3-8B-Instruct"
-BASE_MODEL_NAME="llama-3-8b"  # Short name for easier reference
+BASE_MODEL_REPO="meta-llama/Llama-3.1-8B-Instruct"
+BASE_MODEL_NAME="llama-3.1-8b"  # Short name for easier reference
 
 # FinAI models
 FINLLAVA_REPO="TheFinAI/FinLLaVA"
@@ -45,6 +45,8 @@ source ~/vllm_env/bin/activate
 # 3. Install vLLM and Hugging Face Hub using uv
 echo ""
 echo "[3/9] Installing vLLM and Hugging Face Hub with uv..."
+# Increase timeout for large CUDA packages (nvidia-cusparse-cu12, etc.)
+export UV_HTTP_TIMEOUT=300
 uv pip install --upgrade vllm huggingface_hub
 uv pip install "numpy>1.22.4"
 
@@ -113,6 +115,9 @@ python -m vllm.entrypoints.openai.api_server \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization \${GPU_MEMORY_UTIL} \\
     --max-model-len \${MAX_MODEL_LEN} \\
+    --enable-auto-tool-choice \\
+    --tool-call-parser llama3_json \\
+    --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
     --disable-log-requests
 
 # To enable LoRA adapters, use this instead:
@@ -126,6 +131,9 @@ python -m vllm.entrypoints.openai.api_server \\
 #     --lora-modules finllama=\${FINLLAMA_LORA_PATH} custom=\${CUSTOM_LORA_PATH} \\
 #     --max-model-len \${MAX_MODEL_LEN} \\
 #     --gpu-memory-utilization \${GPU_MEMORY_UTIL} \\
+#     --enable-auto-tool-choice \\
+#     --tool-call-parser llama3_json \\
+#     --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
 #     --disable-log-requests
 EOF
 

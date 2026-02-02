@@ -2,7 +2,7 @@
 # CONFIGURATION - Update IP each time you boot
 # ============================================
 IP=XXX.AAA.NN.111
-
+IP=132.145.131.136
 
 # Key paths
 KEY_TOWER="S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem"

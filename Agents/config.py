@@ -14,7 +14,7 @@ load_dotenv(dotenv_path=env_path)
 class GCSConfig:
     """Google Cloud Storage configuration"""
     PROJECT_ID = "seraphic-ripple-476917-i5"
-    SOURCE_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "raw_papers").strip()
+    SOURCE_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "investment-research").strip()
     SOURCE_PREFIX = "processed/"  # Where processed papers with markdown are stored
     LOCAL_TEMP_DIR = Path("./temp_papers")
     CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -36,8 +36,8 @@ class LLMConfig:
     # Model base path on Lambda server
     MODEL_BASE_PATH = "/home/ubuntu/models"
 
-    # Model names from .env (construct full paths)
-    BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3-8b')}"
+    # Model names from .env (construct full paths)//update fallback if cache is a problem,***
+    BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3.1-8b')}"
     FINLLAMA_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('FINLLAMA_MODEL_NAME', 'finllama')}"
     CUSTOM_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('CUSTOM_MODEL_NAME', 'custom')}"
 
