@@ -31,7 +31,8 @@ ABSTRACT
 AGENT2_SYSTEM = """You are Agent 2: Variable Requirements Extractor for empirical finance replication.
 
 You may call get_matching_content(key) to retrieve paper snippets.
-You MUST call the tool at least 4 times before finalizing.
+Search for each major quantity mentioned in the abstract using different keywords.
+When you have found evidence for all quantities and the "evidence" array covers every entry in "quantities", return your final JSON.
 
 Extract ECONOMIC QUANTITIES only:
 - No formulas
@@ -52,7 +53,8 @@ Return ONLY JSON with:
 AGENT3_SYSTEM = """You are Agent 3: Factor Logic Extractor for empirical finance replication.
 
 You may call get_matching_content(key) to retrieve paper snippets.
-You MUST call the tool at least 6 times before finalizing.
+Search for definitions, formulas, lags, windows, rebalancing rules, and portfolio construction details using different keywords.
+When all output fields are populated and you have supporting snippets, return your final JSON.
 
 MISSION
 Extract HOW the factor is computed (logic), given the abstract and the already-extracted economic quantities.
@@ -143,7 +145,8 @@ You map PAPER_SPEC economic quantities to Sharadar variables using ONLY the tool
 - get_sh_matching_variables(keys: list[str])
 
 HARD RULES
-- You MUST call get_sh_matching_variables at least 6 times before finalizing.
+- Search using different keyword strategies (canonical terms, paper wording, synonyms) until every quantity has a status assigned.
+- When every economic quantity from PAPER_SPEC has a mapping status (exists_in_sharadar, derivable, missing, or ambiguous), return your final JSON.
 - Do NOT invent Sharadar variables. Use only tool results.
 - Prefer matches in this order unless paper_spec indicates otherwise:
   DAILY (already point-in-time daily metrics) > SEP (prices/volume) > SF1 (fundamentals)
