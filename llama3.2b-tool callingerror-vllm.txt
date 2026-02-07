@@ -1,0 +1,68 @@
+The error is now on the vLLM server side - the LLaMA model is generating malformed JSON for tool calls:
+
+
+json.decoder.JSONDecodeError: Expecting ',' delimiter: line 1 column 136 (char 135)
+This happens before your code even receives the response. The llama_tool_parser.py in vLLM is trying to parse the model's tool call output and failing because LLaMA is generating invalid JSON.
+
+The Reality of LLaMA + Tool Calling
+You were right to raise this with your team. LLaMA models have several issues with agentic tool-calling:
+
+Malformed JSON - Missing commas, brackets, quotes (what you're seeing now)
+Wrong format - Wrapping args in properties (the earlier error)
+Inconsistent output - Sometimes tool calls, sometimes plain text
+Streaming issues - Tool parsing during streaming is especially fragile
+Options
+Option	Effort	Reliability
+Switch to GPT-4/Claude	Low	High
+Use a tool-tuned model (Hermes, Nous-Hermes, Gorilla)	Medium	Medium-High
+Disable streaming in vLLM	Low	Might help
+Remove formal tool binding, use raw JSON prompting	High	Medium
+Quick test - try adding --disable-tool-calling or setting stream=False on the vLLM side to see if non-streaming helps.
+
+What model variant are you running? (e.g., llama-3-8b-instruct, llama-3.1-70b-instruct)
+
+
+The Problem: Llama 3.2 3B is Too Small for Reliable Tool Calling
+From vLLM's official docs:
+
+"Llama's smaller models frequently fail to emit tool calls in the correct format. Your mileage may vary."
+
+Specific Issues with Llama 3.2 3B:
+No special tokens - Llama 3.2 emits no special tokens for tool call start/end, making parsing unreliable
+Wrong parameter formats - Generates arrays as strings, missing commas, malformed JSON
+No parallel tool calls - Only supported in Llama 4+
+Your Options
+Option	Pros	Cons
+Upgrade to Llama 3.2 8B or 70B	Better tool calling reliability	More GPU memory needed
+Use Llama 3.1 8B Instruct	Well-tested for tool calling	Larger model
+Add missing chat template	Quick fix, might help	Won't fix core model limitation
+Fine-tune 3B for tool calling	Keep small model	Significant effort
+Manual JSON prompting	No vLLM parser dependency	Rewrite agent code
+Quick Fix to Try First
+Your vLLM command is missing the chat template. Add this to your start_vllm.sh:
+
+
+--chat-template examples/tool_chat_template_llama3.2_json.jinja
+Full command:
+
+
+python -m vllm.entrypoints.openai.api_server \
+    --model ${BASE_MODEL} \
+    --host 0.0.0.0 \
+    --port ${PORT} \
+    --api-key ${API_KEY} \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization ${GPU_MEMORY_UTIL} \
+    --max-model-len ${MAX_MODEL_LEN} \
+    --enable-auto-tool-choice \
+    --tool-call-parser llama3_json \
+    --chat-template examples/tool_chat_template_llama3.2_json.jinja \
+    --disable-log-requests
+My Recommendation
+Upgrade to at least Llama 3.1 8B Instruct for agentic workflows. The 3B model simply doesn't have enough capacity for reliable structured output generation. According to this LangChain forum thread, even with workarounds, 3B models struggle with tool calling.
+
+Your team's pipeline requires multiple sequential tool calls - that's one of the hardest tasks for small models.
+
+Sources:
+
+vLLM
