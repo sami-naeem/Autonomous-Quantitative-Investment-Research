@@ -25,7 +25,7 @@ GCS_DATA_PATH="lake/sh"
 LOCAL_DATA_DIR="$HOME/data/sharadar"
 
 # Git repo (pick ONE auth method below)
-REPO_URL="https://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@github.com/sami-naeem/Autonomous-Quantitative-Investment-Research.git"
+REPO_URL="https://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@github.com/sami-naeem/Autonomous-Quantitative-Investment-Research.git"
 # REPO_URL="git@github.com:YOUR_ORG/YOUR_REPO.git"     # SSH (needs key)
 REPO_DIR="$HOME/capstone"
 
