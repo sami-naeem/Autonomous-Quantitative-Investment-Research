@@ -136,6 +136,7 @@ else
         sandbox_executor.py \
         langgraph.json \
         requirements.txt \
+        endpoints \
         .env.example
 
     # If your folder structure is different, adjust above.
