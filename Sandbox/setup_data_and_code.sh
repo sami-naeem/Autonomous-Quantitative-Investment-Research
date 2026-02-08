@@ -151,7 +151,7 @@ else
     # Add only the folders you need
     git sparse-checkout set \
         Agents/ \
-        sandbox_executor.py \
+        Sandbox/ \
         langgraph.json \
         requirements.txt \
         endpoints \
