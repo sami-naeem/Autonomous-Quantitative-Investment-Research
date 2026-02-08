@@ -116,6 +116,24 @@ echo ""
 echo "  ✅ Data ready at: ${LOCAL_DATA_DIR}"
 
 # =============================================================================
+# STEP 4a: Pull LoRA adapters from GCS
+# =============================================================================
+echo ""
+echo "[4/6] Pulling LoRA adapters from GCS..."
+
+LORA_LOCAL_DIR="$HOME/lora_adapters/finllama-lora"
+GCS_LORA_PATH="Fine_Tuning/lora_adapters"
+
+mkdir -p "${LORA_LOCAL_DIR}"
+gsutil -m cp -r "gs://${GCS_BUCKET}/${GCS_LORA_PATH}/*" "${LORA_LOCAL_DIR}/"
+
+echo ""
+echo "  LoRA adapter files:"
+ls -lh "${LORA_LOCAL_DIR}/"
+echo ""
+echo "  ✅ LoRA adapters ready at: ${LORA_LOCAL_DIR}"
+
+# =============================================================================
 # STEP 4: Clone repo (sparse checkout — only needed folders)
 # =============================================================================
 echo ""
