@@ -2,49 +2,88 @@
 # CONFIGURATION - Update IP each time you boot
 # ============================================
 IP=XXX.AAA.NN.111
-IP=132.145.131.136
 
 # Key paths
-KEY_TOWER="S:/Data Science/Autonomous-Quantitative-Investment-Research/sebas.pem"
-
 KEY_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem"
 KEY_LAPTOP="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/sebas.pem"
 
 # Script paths
-SCRIPT="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda.sh"
-SCRIPT="S:\Data Science\Autonomous-Quantitative-Investment-Research\endpoints\setup_lambda.sh"
+SCRIPT_DOCKER="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda_docker.sh"
+SCRIPT_DOCKER_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\endpoints\setup_lambda_docker.sh"
+
+SCRIPT_DATA="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/Autonomous-Quantitative-Investment-Research/Sandbox/setup_data_and_code.sh"
+SCRIPT_DATA_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\Sandbox\setup_data_and_code.sh"
 
 # ============================================
-# COMMANDS
+# STEP 1: Copy scripts to the remote server
 # ============================================
-
-# Step 1: Copy the script to the remote server
-
-# Tower:
-scp -i "$KEY_TOWER" "$SCRIPT" ubuntu@$IP:~/setup_lambda.sh
 
 # Laptop:
-scp -i "$KEY_LAPTOP" "$SCRIPT" ubuntu@$IP:~/setup_lambda.sh
-
-# Step 2: SSH into the server
+scp -i "$KEY_LAPTOP" "$SCRIPT_DOCKER" ubuntu@$IP:~/setup_lambda_docker.sh
+scp -i "$KEY_LAPTOP" "$SCRIPT_DATA" ubuntu@$IP:~/setup_data_and_code.sh
 
 # Tower:
-ssh -i "$KEY_TOWER" ubuntu@$IP
+scp -i "$KEY_TOWER" "$SCRIPT_DOCKER_TOWER" ubuntu@$IP:~/setup_lambda_docker.sh
+scp -i "$KEY_TOWER" "$SCRIPT_DATA_TOWER" ubuntu@$IP:~/setup_data_and_code.sh
+
+# ============================================
+# STEP 2: SSH into the server
+# ============================================
 
 # Laptop:
 ssh -i "$KEY_LAPTOP" ubuntu@$IP
 
+# Tower:
+ssh -i "$KEY_TOWER" ubuntu@$IP
 
 # ============================================
-# Step 3: Once logged in, run these on server
+# STEP 3: On the server — Part 1 (Docker + vLLM + model)
 # ============================================
 
-# Fix line endings (if needed)
-sed -i 's/\r$//' ~/setup_lambda.sh
+# Fix line endings (Windows -> Linux)
+sed -i 's/\r$//' ~/setup_lambda_docker.sh
+sed -i 's/\r$//' ~/setup_data_and_code.sh
 
 # Make executable
-chmod +x ~/setup_lambda.sh
+chmod +x ~/setup_lambda_docker.sh
+chmod +x ~/setup_data_and_code.sh
 
-# Run the script
-bash -x ~/setup_lambda.sh
+# Run Part 1: installs uv, pulls Docker image, downloads base model, creates startup scripts
+bash -x ~/setup_lambda_docker.sh
 
+# ============================================
+# STEP 4: On the server — Part 2 (Data + LoRA + code)
+# ============================================
+
+# Run Part 2: authenticates GCS, pulls Sharadar data, pulls LoRA adapters, clones repo
+bash -x ~/setup_data_and_code.sh
+
+# ============================================
+# STEP 5: On the server — Start vLLM
+# ============================================
+
+# Pick ONE of the following:
+
+# Option A: Dynamic LoRA loading
+~/scripts/start_vllm_lora.sh
+
+# Option B: Merge LoRA first, then serve merged model
+source ~/vllm_env/bin/activate
+python ~/scripts/merge_lora.py
+~/scripts/start_vllm_merged.sh
+
+# Option C: Base model only (no LoRA)
+~/scripts/start_vllm_base.sh
+
+# ============================================
+# USEFUL COMMANDS
+# ============================================
+
+# Monitor vLLM logs
+docker logs -f vllm-server
+
+# Test the API
+curl http://localhost:8000/v1/models -H 'Authorization: Bearer token-abc123'
+
+# Stop vLLM
+~/scripts/stop_vllm.sh
