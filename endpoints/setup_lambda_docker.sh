@@ -90,7 +90,7 @@ source ~/vllm_env/bin/activate
 # 4. Install utility dependencies (NOT vllm — that runs in Docker)
 echo ""
 echo "[4/10] Installing utility dependencies with uv..."
-uv pip install --upgrade huggingface_hub
+uv pip install --reinstall huggingface_hub
 uv pip install "numpy>1.22.4"
 uv pip install peft  # Required for LoRA merging
 
