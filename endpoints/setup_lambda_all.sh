@@ -314,6 +314,8 @@ docker run -d --name vllm-server \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
     --max-model-len 8192 \\
+    --enable-auto-tool-choice \\
+    --tool-call-parser llama3_json \\
     --disable-log-requests
 echo "Started. Logs: docker logs -f vllm-server"
 SCRIPT_EOF
