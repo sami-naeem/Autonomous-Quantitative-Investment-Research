@@ -1,4 +1,20 @@
 # ============================================
+# IMPORTANT NOTES
+# ============================================
+#
+# WINDOWS CRLF WARNING:
+#   If setup_lambda_all.sh was edited or copied on a Windows PC, it will
+#   have CRLF line endings (\r\n) which cause SILENT FAILURES on Linux.
+#   The sed command below strips them — do NOT skip it.
+#
+# DOCKER GROUP:
+#   On a fresh Lambda instance, your user may not have docker access.
+#   The setup script handles this automatically, and the generated
+#   startup scripts (~/scripts/start_vllm_*.sh) also include a
+#   docker group check. If you still get "permission denied" errors,
+#   run:  sudo usermod -aG docker $USER && newgrp docker
+#
+# ============================================
 # CONFIGURATION - Update IP each time you boot
 # ============================================
 IP=129.146.7.42
@@ -35,17 +51,31 @@ sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh
 # ============================================
 # AFTER SETUP: Start vLLM (pick one)
 # ============================================
+#
+# 3 models available:
+#   base     = Llama 3.1 8B Instruct (untrained)
+#   finllama = Fino1-8B (financial reasoning model from TheFinAI)
+#   custom   = Your LoRA fine-tuned adapter on top of base
+#
 
-# Option A — Dynamic LoRA:
-~/scripts/start_vllm_lora.sh
+# 1) Base model only:
+~/scripts/start_vllm_base.sh
 
-# Option B — Merge LoRA first (recommended):
+# 2) Fino1-8B (finllama):
+~/scripts/start_vllm_finllama.sh
+
+# 3) Custom LoRA (dynamic — base + LoRA applied at runtime):
+#    Serves BOTH base and custom from one server.
+#    Use model='custom' in API calls for LoRA, or base model name for plain.
+#    Slightly more memory, slightly slower inference.
+~/scripts/start_vllm_custom.sh
+
+# 4) Custom merged (LoRA weights baked into base — single standalone model):
+#    Faster inference, less memory, but only serves the custom model (no base).
+#    Must run merge_lora.py first to create ~/models/custom-merged.
 source ~/vllm_env/bin/activate
 python ~/scripts/merge_lora.py
-~/scripts/start_vllm_merged.sh
-
-# Option C — Base model only:
-~/scripts/start_vllm_base.sh
+~/scripts/start_vllm_custom_merged.sh
 
 # ============================================
 # USEFUL COMMANDS

@@ -35,3 +35,5 @@ endpoints/setup_lambda.sh
 sebas.pem
 endpoints/setup_lambda.sh
 endpoints/setup_lambda.sh
+comprehensive evaluation.md
+.claude/settings.local.json
