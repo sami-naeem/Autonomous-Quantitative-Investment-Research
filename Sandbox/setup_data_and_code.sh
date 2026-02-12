@@ -148,8 +148,8 @@ else
     git clone --filter=blob:none --sparse "${REPO_URL}" "${REPO_DIR}"
     cd "${REPO_DIR}"
 
-    # Add only the folders you need
-    git sparse-checkout set \
+    # Add directories and individual files (--no-cone allows file-level patterns)
+    git sparse-checkout set --no-cone \
         Agents/ \
         Sandbox/ \
         langgraph.json \
