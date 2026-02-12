@@ -117,7 +117,7 @@ mkdir -p ~/scripts
 # 8. Download base model
 echo ""
 echo "[8/10] Downloading base model: $BASE_MODEL_REPO"
-huggingface-cli download $BASE_MODEL_REPO --local-dir ~/models/${BASE_MODEL_NAME}
+python -c "from huggingface_hub import snapshot_download; snapshot_download('$BASE_MODEL_REPO', local_dir='$HOME/models/${BASE_MODEL_NAME}')"
 
 # 9. Setup LoRA adapters
 echo ""
