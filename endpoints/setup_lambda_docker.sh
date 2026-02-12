@@ -84,7 +84,7 @@ export PATH="$HOME/.local/bin:$PATH"
 # 3. Create virtual environment (with system-site-packages for CUDA PyTorch access)
 echo ""
 echo "[3/10] Creating virtual environment..."
-python3 -m venv ~/vllm_env --system-site-packages
+uv venv --system-site-packages ~/vllm_env
 source ~/vllm_env/bin/activate
 
 # 4. Install utility dependencies (NOT vllm — that runs in Docker)
