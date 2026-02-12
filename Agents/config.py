@@ -30,11 +30,11 @@ class LLMConfig:
     MAIN_TEMPERATURE = 0.0
 
     # vLLM Lambda endpoint
-    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://150.136.95.215:8000/v1")
+    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "146.235.222.142:8000/v1")
     LAMBDA_API_KEY = os.getenv("LAMBDA_API_KEY", "token-abc123")
 
     # Model base path on Lambda server
-    MODEL_BASE_PATH = "/home/ubuntu/models"
+    MODEL_BASE_PATH = "/models"
 
     # Model names from .env (construct full paths)//update fallback if cache is a problem,***
     BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3.1-8b')}"
