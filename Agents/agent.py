@@ -234,10 +234,47 @@ def _extract_json(text: str) -> dict:
     m = re.search(r"\{.*\}", raw, flags=re.S)
     if not m:
         raise ValueError(f"Model did not return JSON. Raw output:\n{raw}")
-    # Use raw_decode to handle extra trailing data from the model
+
+    candidate = m.group(0)
+
+    # Try raw_decode first (fast path)
     decoder = json.JSONDecoder()
-    obj, _ = decoder.raw_decode(m.group(0))
-    return obj
+    try:
+        obj, _ = decoder.raw_decode(candidate)
+        return obj
+    except json.JSONDecodeError:
+        pass
+
+    # --- Repair common LLaMA JSON errors ---
+    repaired = candidate
+    # 1. Replace single-quoted keys/values with double quotes
+    repaired = re.sub(r"(?<=[\{,\s])\s*'([^']+)'\s*:", r' "\1":', repaired)
+    repaired = re.sub(r":\s*'([^']*)'", r': "\1"', repaired)
+    # 2. Remove trailing commas before } or ]
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    # 3. Remove JavaScript-style comments
+    repaired = re.sub(r"//[^\n]*", "", repaired)
+
+    try:
+        obj, _ = decoder.raw_decode(repaired)
+        logger.warning("JSON required repair (trailing comma / single quotes)")
+        return obj
+    except json.JSONDecodeError:
+        pass
+
+    # Last resort: try ast.literal_eval (handles Python dict literals)
+    import ast
+    try:
+        obj = ast.literal_eval(candidate)
+        if isinstance(obj, dict):
+            logger.warning("JSON parsed via ast.literal_eval fallback")
+            return obj
+    except (ValueError, SyntaxError):
+        pass
+
+    raise ValueError(
+        f"Could not parse JSON even after repair. Raw output:\n{candidate[:500]}"
+    )
 
 
 def _load_sharadar_data_dicts() -> Dict[str, Dict[str, str]]:

@@ -30,15 +30,16 @@ class LLMConfig:
     MAIN_TEMPERATURE = 0.0
 
     # vLLM Lambda endpoint
-    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://150.136.38.199:8000/v1")
+    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://209.20.159.74:8000/v1")
     LAMBDA_API_KEY = os.getenv("LAMBDA_API_KEY", "token-abc123")
 
     # Model base path on Lambda server
     MODEL_BASE_PATH = "/models"
 
     BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3.1-8b')}"
-    FINLLAMA_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('FINLLAMA_MODEL_NAME', 'finllama')}"
-    CUSTOM_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('CUSTOM_MODEL_NAME', 'custom')}"
+    # LoRA adapters are registered by name only (no path prefix) in vLLM
+    FINLLAMA_MODEL = os.getenv('FINLLAMA_MODEL_NAME', 'finllama')
+    CUSTOM_MODEL = os.getenv('CUSTOM_MODEL_NAME', 'custom')
 
     # Model temperature
     LAMBDA_TEMPERATURE = 0.7
