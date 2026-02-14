@@ -15,21 +15,17 @@
 #   run:  sudo usermod -aG docker $USER && newgrp docker
 #
 # ============================================
-# CONFIGURATION - Update IP each time you boot
+#  OPTION A: Terminal (2 commands) CONFIGURATION - Update IP each time you boot
 # ============================================
-IP=150.136.38.199
+IP=209.20.159.74
 
-# Key paths
+# Key paths - modify paths for ssh key path
 KEY_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem"
 KEY_LAPTOP="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/sebas.pem"
-
-# Script path
+ 
+# Script path (modify yours to match where ur scripts are for setup_lambda_all)
 SCRIPT_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\endpoints\setup_lambda_all.sh"
 SCRIPT_LAPTOP="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - DS/Capstone I/Autonomous-Quantitative-Investment-Research/endpoints/setup_lambda_all.sh"
-
-# ============================================
-# OPTION A: Terminal (2 commands)
-# ============================================
 
 # Tower:
 scp -i "$KEY_TOWER" "$SCRIPT_TOWER" ubuntu@$IP:~/setup_lambda_all.sh
@@ -40,7 +36,7 @@ scp -i "$KEY_LAPTOP" "$SCRIPT_LAPTOP" ubuntu@$IP:~/setup_lambda_all.sh
 ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh"
 
 # ============================================
-# OPTION B: Lambda Jupyter Notebook
+# OPTION B: LOW EFFORT - Lambda Jupyter Notebook (RUN THIS IF U WANT TO DRAG AND DROP VIA THE Jupyter UI)
 # ============================================
 # 1. Open Lambda's Jupyter UI in browser
 # 2. Drag & drop setup_lambda_all.sh into home folder
@@ -49,14 +45,14 @@ ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup_lambda_all.sh && bash 
 sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh
 
 # ============================================
-# AFTER SETUP: Start vLLM (pick one)
+# AFTER SETUP: Start vLLM (pick one) 
 # ============================================
 #
 # 3 models available:
 #   base     = Llama 3.1 8B Instruct (untrained)
 #   finllama = Fino1-8B (financial reasoning model from TheFinAI)
 #   custom   = Your LoRA fine-tuned adapter on top of base
-#
+#   CUSTOM merged = LoRA weights baked into base — single standalone model
 
 # 1) Base model only (ENABLED ):
 ~/scripts/start_vllm_base.sh
@@ -84,6 +80,15 @@ python ~/scripts/merge_lora.py
 # SSH into server:
 ssh -i "$KEY_TOWER" ubuntu@$IP    # Tower
 ssh -i "$KEY_LAPTOP" ubuntu@$IP   # Laptop
+
+
+
+# DOCKER GROUP:
+#   On a fresh Lambda instance, your user may not have docker access.
+#   The setup script handles this automatically, and the generated
+#   startup scripts (~/scripts/start_vllm_*.sh) also include a
+#   docker group check. If you still get "permission denied" errors, run:  
+sudo usermod -aG docker $USER && newgrp docker
 
 # Monitor vLLM logs
 docker logs -f vllm-server
