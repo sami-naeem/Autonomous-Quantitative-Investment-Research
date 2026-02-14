@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END
 
-from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, BaseMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 
 from Agents.config import LoggingConfig, LLMConfig
@@ -305,7 +305,6 @@ def _run_react_json_agent(
 
     for round_num in range(max_rounds):
         resp = llm_with_tools.invoke(messages)
-        messages.append(resp)
 
         # Check for invalid_tool_calls (vLLM returns these when parser fails)
         invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
@@ -314,6 +313,7 @@ def _run_react_json_agent(
                 f"Round {round_num + 1}: Model produced {len(invalid_tcs)} invalid tool call(s). "
                 "Asking model to retry with correct format."
             )
+            messages.append(resp)
             messages.append(
                 HumanMessage(
                     content=(
@@ -328,6 +328,15 @@ def _run_react_json_agent(
 
         tool_calls = getattr(resp, "tool_calls", None) or []
         if tool_calls:
+            # LLaMA 3 only supports single tool-calls per turn.
+            # Split multiple tool calls into separate (AIMessage, ToolMessage) pairs
+            # so the chat template never sees >1 tool call on a single AIMessage.
+            if len(tool_calls) > 1:
+                logger.info(
+                    f"Round {round_num + 1}: LLM requested {len(tool_calls)} tool calls. "
+                    f"Processing sequentially: {[tc.get('name') for tc in tool_calls]}"
+                )
+
             for tc in tool_calls:
                 name = tc.get("name")
                 args = tc.get("args", {}) or {}
@@ -339,6 +348,13 @@ def _run_react_json_agent(
                 if name not in tool_map:
                     raise ValueError(f"Unknown tool requested by model: {name}")
 
+                # Create a NEW AIMessage with ONLY this single tool call
+                single_tool_ai_msg = AIMessage(
+                    content="",
+                    tool_calls=[{"name": name, "args": args, "id": tool_id, "type": "tool_call"}],
+                )
+                messages.append(single_tool_ai_msg)
+
                 result = tool_map[name].invoke(args)
                 messages.append(
                     ToolMessage(
@@ -348,7 +364,10 @@ def _run_react_json_agent(
                 )
             continue
 
-        # No tool calls — check if content looks like a failed tool call
+        # No tool calls — append resp as-is (plain text, no tool_calls to worry about)
+        messages.append(resp)
+
+        # Check if content looks like a failed tool call
         # (vLLM puts malformed tool JSON into content when parser fails)
         content = getattr(resp, "content", "") or ""
         if content and not invalid_tcs:
@@ -697,10 +716,6 @@ def build_graph() -> StateGraph:
 
     return graph.compile()
 
-
-# Patch for LLaMA 3 single tool-call constraint (must run before graph is used)
-from Agents.react_single_tool import patch_agent_module
-patch_agent_module()
 
 # Build the application
 app = build_graph()
