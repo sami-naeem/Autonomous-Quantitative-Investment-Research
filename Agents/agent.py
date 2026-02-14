@@ -27,7 +27,7 @@ import logging
 import re
 import httpx
 from contextvars import ContextVar
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from langgraph.graph import StateGraph, END
 
@@ -306,6 +306,26 @@ def _run_react_json_agent(
     for round_num in range(max_rounds):
         resp = llm_with_tools.invoke(messages)
 
+        # Detect truncated output (model hit max_tokens before finishing)
+        finish_reason = (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
+        if finish_reason == "length":
+            logger.warning(
+                f"Round {round_num + 1}: Response truncated (finish_reason='length'). "
+                "Asking model to retry with concise output."
+            )
+            messages.append(resp)
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "Your response was cut off because it exceeded the token limit. "
+                        "Please retry and be MORE CONCISE. Use shorter descriptions, "
+                        "abbreviate where possible, and omit unnecessary detail. "
+                        "Output ONLY the required JSON object, nothing else."
+                    )
+                )
+            )
+            continue
+
         # Check for invalid_tool_calls (vLLM returns these when parser fails)
         invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
         if invalid_tcs:
@@ -346,7 +366,21 @@ def _run_react_json_agent(
                 tool_id = tc.get("id")
 
                 if name not in tool_map:
-                    raise ValueError(f"Unknown tool requested by model: {name}")
+                    logger.warning(
+                        f"Round {round_num + 1}: Model hallucinated tool '{name}'. "
+                        f"Available: {list(tool_map.keys())}. Asking to retry."
+                    )
+                    messages.append(resp)
+                    messages.append(
+                        HumanMessage(
+                            content=(
+                                f"Tool '{name}' does not exist. "
+                                f"Available tools: {list(tool_map.keys())}. "
+                                "Please use one of the available tools."
+                            )
+                        )
+                    )
+                    break  # break out of the for-loop over tool_calls, continue ReAct loop
 
                 # Create a NEW AIMessage with ONLY this single tool call
                 single_tool_ai_msg = AIMessage(
