@@ -25,6 +25,7 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 import json
 import logging
 import re
+import httpx
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
@@ -33,7 +34,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 
-from Agents.config import LoggingConfig
+from Agents.config import LoggingConfig, LLMConfig
 from Agents.nodes import AgentState, select_model_node, select_paper_node  # reuse existing nodes
 from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_client
 from Agents.config import GCSConfig
@@ -233,7 +234,10 @@ def _extract_json(text: str) -> dict:
     m = re.search(r"\{.*\}", raw, flags=re.S)
     if not m:
         raise ValueError(f"Model did not return JSON. Raw output:\n{raw}")
-    return json.loads(m.group(0))
+    # Use raw_decode to handle extra trailing data from the model
+    decoder = json.JSONDecoder()
+    obj, _ = decoder.raw_decode(m.group(0))
+    return obj
 
 
 def _load_sharadar_data_dicts() -> Dict[str, Dict[str, str]]:
@@ -299,9 +303,28 @@ def _run_react_json_agent(
         HumanMessage(content=json.dumps(user_payload, indent=2)),
     ]
 
-    for _ in range(max_rounds):
+    for round_num in range(max_rounds):
         resp = llm_with_tools.invoke(messages)
         messages.append(resp)
+
+        # Check for invalid_tool_calls (vLLM returns these when parser fails)
+        invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
+        if invalid_tcs:
+            logger.warning(
+                f"Round {round_num + 1}: Model produced {len(invalid_tcs)} invalid tool call(s). "
+                "Asking model to retry with correct format."
+            )
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "Your last tool call was malformed and could not be parsed. "
+                        "You must include the 'name' key. Correct format:\n"
+                        '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                        f"Available tools: {list(tool_map.keys())}. Please try again."
+                    )
+                )
+            )
+            continue
 
         tool_calls = getattr(resp, "tool_calls", None) or []
         if tool_calls:
@@ -325,10 +348,69 @@ def _run_react_json_agent(
                 )
             continue
 
+        # No tool calls — check if content looks like a failed tool call
+        # (vLLM puts malformed tool JSON into content when parser fails)
+        content = getattr(resp, "content", "") or ""
+        if content and not invalid_tcs:
+            try:
+                maybe_tc = json.loads(content)
+                if isinstance(maybe_tc, dict) and "parameters" in maybe_tc and "name" not in maybe_tc:
+                    logger.warning(
+                        f"Round {round_num + 1}: Content looks like a tool call missing 'name'. "
+                        "Asking model to retry."
+                    )
+                    messages.append(
+                        HumanMessage(
+                            content=(
+                                "Your response looks like a tool call but is missing the 'name' key. "
+                                "Correct format:\n"
+                                '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                                f"Available tools: {list(tool_map.keys())}. Please try again."
+                            )
+                        )
+                    )
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         # Final answer (should be JSON)
-        return _extract_json(getattr(resp, "content", ""))
+        return _extract_json(content)
 
     raise RuntimeError("Exceeded max tool rounds without producing a final JSON answer.")
+
+
+# ---------------------------------------------------------------------
+# Endpoint validation node (fail fast on misconfigured model)
+# ---------------------------------------------------------------------
+def validate_endpoint_node(state: AgentState) -> AgentState:
+    """Check that the selected model is reachable on the vLLM endpoint."""
+    model_choice = state.get("model_choice", "openai")
+
+    if model_choice == "openai":
+        logger.info("Using OpenAI — skipping endpoint validation.")
+        return {}
+
+    llm = get_llm_by_name(model_choice)
+    model_name = getattr(llm, "model_name", "unknown")
+    base_url = getattr(llm, "openai_api_base", LLMConfig.LAMBDA_ENDPOINT)
+
+    models_url = base_url.rstrip("/").rsplit("/v1", 1)[0] + "/v1/models"
+    logger.info(f"Validating endpoint: model={model_name} url={models_url}")
+
+    try:
+        resp = httpx.get(models_url, headers={"Authorization": f"Bearer {LLMConfig.LAMBDA_API_KEY}"}, timeout=10)
+        resp.raise_for_status()
+        available = [m["id"] for m in resp.json().get("data", [])]
+    except Exception as e:
+        raise ConnectionError(f"Cannot reach vLLM at {models_url}: {e}")
+
+    if model_name not in available:
+        raise ValueError(
+            f"Model '{model_name}' not found on vLLM. Available: {available}"
+        )
+
+    logger.info(f"Endpoint OK — '{model_name}' is available.")
+    return {}
 
 
 # ---------------------------------------------------------------------
@@ -571,14 +653,15 @@ def build_graph() -> StateGraph:
     Build the LangGraph workflow for the paper replication agent.
 
     Workflow:
-        select_model -> select_paper -> load_paper_markdown -> triage_paper -> agent2_vars -> agent3_logic
-        -> agent325_paper_spec -> agent4_sharadar_map -> agent45_factor_spec
-        -> agent5_ts_codegen -> agent6_cs_codegen -> finalize -> END
+        select_model -> [validate_endpoint, select_paper -> load_paper_markdown] -> triage_paper
+        -> agent2_vars -> agent3_logic -> agent325_paper_spec -> agent4_sharadar_map
+        -> agent45_factor_spec -> agent5_ts_codegen -> agent6_cs_codegen -> finalize -> END
     """
     graph = StateGraph(AgentState)
 
     # Reuse existing nodes (minimal change)
     graph.add_node("select_model", select_model_node)
+    graph.add_node("validate_endpoint", validate_endpoint_node)
     graph.add_node("select_paper", select_paper_node)
     graph.add_node("load_paper_markdown", load_paper_markdown_from_gcs_node)
 
@@ -595,9 +678,13 @@ def build_graph() -> StateGraph:
 
     graph.set_entry_point("select_model")
 
+    # Fan-out: validate endpoint in parallel with paper selection
     graph.add_edge("select_model", "select_paper")
+    graph.add_edge("select_model", "validate_endpoint")
     graph.add_edge("select_paper", "load_paper_markdown")
+    # Fan-in: both must complete before triage
     graph.add_edge("load_paper_markdown", "triage_paper")
+    graph.add_edge("validate_endpoint", "triage_paper")
     graph.add_edge("triage_paper", "agent2_vars")
     graph.add_edge("agent2_vars", "agent3_logic")
     graph.add_edge("agent3_logic", "agent325_paper_spec")

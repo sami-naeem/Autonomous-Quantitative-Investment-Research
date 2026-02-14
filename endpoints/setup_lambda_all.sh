@@ -283,6 +283,9 @@ docker run -d --name vllm-server \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
     --max-model-len 8192 \\
+    --enable-auto-tool-choice \\
+    --tool-call-parser llama3_json \\
+    --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
     --disable-log-requests
 echo "Started. Logs: docker logs -f vllm-server"
 SCRIPT_EOF
@@ -316,6 +319,7 @@ docker run -d --name vllm-server \\
     --max-model-len 8192 \\
     --enable-auto-tool-choice \\
     --tool-call-parser llama3_json \\
+    --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
     --disable-log-requests
 echo "Started. Logs: docker logs -f vllm-server"
 SCRIPT_EOF
@@ -350,6 +354,9 @@ docker run -d --name vllm-server \\
     --max-lora-rank 64 \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
+    --enable-auto-tool-choice \\
+    --tool-call-parser llama3_json \\
+    --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
     --max-model-len 8192 \\
     --disable-log-requests
 echo "Started. Use model='custom' in API calls for LoRA."
@@ -410,6 +417,9 @@ docker run -d --name vllm-server \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
     --max-model-len 8192 \\
+    --enable-auto-tool-choice \\
+    --tool-call-parser llama3_json \\
+    --chat-template examples/tool_chat_template_llama3.1_json.jinja \\
     --disable-log-requests
 echo "Started. Logs: docker logs -f vllm-server"
 SCRIPT_EOF

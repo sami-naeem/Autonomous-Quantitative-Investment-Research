@@ -66,7 +66,10 @@ def _extract_json(text: str) -> dict:
     m = re.search(r"\{.*\}", raw, flags=re.S)
     if not m:
         raise ValueError(f"Model did not return JSON. Raw output:\n{raw}")
-    return json.loads(m.group(0))
+    # Use raw_decode to handle extra trailing data from the model
+    decoder = json.JSONDecoder()
+    obj, _ = decoder.raw_decode(m.group(0))
+    return obj
 
 
 def run_react_sequential_tools(
@@ -112,9 +115,53 @@ def run_react_sequential_tools(
         resp = llm_with_tools.invoke(messages)
         tool_calls = getattr(resp, "tool_calls", None) or []
 
+        # Check for invalid_tool_calls (vLLM returns these when parser fails)
+        invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
+        if invalid_tcs:
+            logger.warning(
+                f"Round {round_num + 1}: Model produced {len(invalid_tcs)} invalid tool call(s). "
+                "Asking model to retry with correct format."
+            )
+            messages.append(resp)
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "Your last tool call was malformed and could not be parsed. "
+                        "You must include the 'name' key. Correct format:\n"
+                        '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                        f"Available tools: {list(tool_map.keys())}. Please try again."
+                    )
+                )
+            )
+            continue
+
         if not tool_calls:
+            # Check if content looks like a failed tool call missing 'name'
+            content = getattr(resp, "content", "") or ""
+            if content:
+                try:
+                    maybe_tc = json.loads(content)
+                    if isinstance(maybe_tc, dict) and "parameters" in maybe_tc and "name" not in maybe_tc:
+                        logger.warning(
+                            f"Round {round_num + 1}: Content looks like a tool call missing 'name'. "
+                            "Asking model to retry."
+                        )
+                        messages.append(resp)
+                        messages.append(
+                            HumanMessage(
+                                content=(
+                                    "Your response looks like a tool call but is missing the 'name' key. "
+                                    "Correct format:\n"
+                                    '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                                    f"Available tools: {list(tool_map.keys())}. Please try again."
+                                )
+                            )
+                        )
+                        continue
+                except (json.JSONDecodeError, TypeError):
+                    pass
             # No tool calls - this is the final answer
-            return _extract_json(getattr(resp, "content", ""))
+            return _extract_json(content)
 
         # Process each tool call as a SEPARATE conversation turn
         # This avoids LLaMA 3's "single tool-calls at once" restriction

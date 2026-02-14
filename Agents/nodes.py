@@ -19,15 +19,20 @@ logger = logging.getLogger("agent-pipeline")
 MODEL_OPTIONS = ["openai", "finllama", "base", "custom"]
 
 
+def _last_value(existing: str, new: str) -> str:
+    """Reducer that keeps the latest non-empty value (last-write-wins)."""
+    return new if new else existing
+
+
 class AgentState(TypedDict):
     """State schema for the agent workflow"""
     messages: Annotated[List[BaseMessage], add_messages]
-    model_choice: str  # User-selected model: "openai", "finllama", "base", or "custom"
-    paper_name: str
-    paper_text: str
+    model_choice: Annotated[str, _last_value]
+    paper_name: Annotated[str, _last_value]
+    paper_text: Annotated[str, _last_value]
     signals: Annotated[list, operator.add]
-    analysis: str
-    model_used: str
+    analysis: Annotated[str, _last_value]
+    model_used: Annotated[str, _last_value]
 
 
 def select_model_node(state: AgentState) -> AgentState:

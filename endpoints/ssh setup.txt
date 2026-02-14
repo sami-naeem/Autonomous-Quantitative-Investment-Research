@@ -17,7 +17,7 @@
 # ============================================
 # CONFIGURATION - Update IP each time you boot
 # ============================================
-IP=129.146.7.42
+IP=150.136.38.199
 
 # Key paths
 KEY_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem"
@@ -32,12 +32,12 @@ SCRIPT_LAPTOP="C:/Users/river/OneDrive/Documents/Data Science/Masters Science - 
 # ============================================
 
 # Tower:
-scp -i "$KEY_TOWER" "$SCRIPT_TOWER" ubuntu@$IP:~/setup.sh
-ssh -i "$KEY_TOWER" ubuntu@$IP "sed -i 's/\r$//' ~/setup.sh && bash ~/setup.sh"
+scp -i "$KEY_TOWER" "$SCRIPT_TOWER" ubuntu@$IP:~/setup_lambda_all.sh
+ssh -i "$KEY_TOWER" ubuntu@$IP "sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh"
 
 # Laptop:
-scp -i "$KEY_LAPTOP" "$SCRIPT_LAPTOP" ubuntu@$IP:~/setup.sh
-ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup.sh && bash ~/setup.sh"
+scp -i "$KEY_LAPTOP" "$SCRIPT_LAPTOP" ubuntu@$IP:~/setup_lambda_all.sh
+ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh"
 
 # ============================================
 # OPTION B: Lambda Jupyter Notebook
@@ -45,7 +45,7 @@ ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup.sh && bash ~/setup.sh"
 # 1. Open Lambda's Jupyter UI in browser
 # 2. Drag & drop setup_lambda_all.sh into home folder
 # 3. Open a Terminal tab in Jupyter
-# 4. Run:
+# (IMPORTANT) 4. Run:
 sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh
 
 # ============================================
@@ -58,13 +58,13 @@ sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh
 #   custom   = Your LoRA fine-tuned adapter on top of base
 #
 
-# 1) Base model only:
+# 1) Base model only (ENABLED ):
 ~/scripts/start_vllm_base.sh
 
 # 2) Fino1-8B (finllama):
 ~/scripts/start_vllm_finllama.sh
 
-# 3) Custom LoRA (dynamic — base + LoRA applied at runtime):
+# 3) Custom LoRA (dynamic — base + LoRA applied at runtime): (BROKEN)
 #    Serves BOTH base and custom from one server.
 #    Use model='custom' in API calls for LoRA, or base model name for plain.
 #    Slightly more memory, slightly slower inference.
