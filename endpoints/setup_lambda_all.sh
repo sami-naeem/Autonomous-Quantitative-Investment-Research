@@ -173,13 +173,25 @@ echo "════════════════════════�
 # --- Step 9: GCS Authentication ---
 echo ""
 echo "[9/13] Setting up GCS authentication..."
+
+# Check for service account credentials (supports two common file names)
+GCS_KEY_FILE=""
 if [ -f "$HOME/service-account-key.json" ]; then
-    echo "  Found service account key, activating..."
-    gcloud auth activate-service-account --key-file="$HOME/service-account-key.json"
-    export GOOGLE_APPLICATION_CREDENTIALS="$HOME/service-account-key.json"
-    echo "  Authenticated via service account."
+    GCS_KEY_FILE="$HOME/service-account-key.json"
+    echo "  Found: ~/service-account-key.json"
+elif [ -f "$HOME/credentials.json" ]; then
+    GCS_KEY_FILE="$HOME/credentials.json"
+    echo "  Found: ~/credentials.json"
+fi
+
+if [ -n "$GCS_KEY_FILE" ]; then
+    echo "  Activating service account..."
+    gcloud auth activate-service-account --key-file="$GCS_KEY_FILE"
+    export GOOGLE_APPLICATION_CREDENTIALS="$GCS_KEY_FILE"
+    echo "  Authenticated via service account: $(basename $GCS_KEY_FILE)"
 else
-    echo "  No service account key found at ~/service-account-key.json"
+    echo "  No service account key found."
+    echo "  Checked: ~/service-account-key.json, ~/credentials.json"
     echo "  Trying gcloud auth login..."
     if command -v gcloud &> /dev/null; then
         gcloud auth login --no-launch-browser
