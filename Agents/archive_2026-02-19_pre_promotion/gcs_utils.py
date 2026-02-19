@@ -14,6 +14,7 @@ logger = logging.getLogger("agent-pipeline")
 # Module-level storage client (singleton pattern)
 _storage_client = None
 
+
 def ensure_auth() -> Optional[storage.Client]:
     """
     Ensure GCS authentication is set up correctly.
@@ -27,25 +28,18 @@ def ensure_auth() -> Optional[storage.Client]:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCSConfig.LAMBDA_CREDENTIALS_PATH
             logger.info("Using Lambda service account key")
 
+        # Create storage client
         storage_client = storage.Client(project=GCSConfig.PROJECT_ID)
 
-        # ✅ Test authentication against the specific bucket (no project-wide list)
-        bucket = storage_client.bucket(GCSConfig.SOURCE_BUCKET_NAME)
-        if not bucket.exists():  # requires storage.buckets.get
-            raise PermissionError(
-                f"Authenticated, but cannot access bucket '{GCSConfig.SOURCE_BUCKET_NAME}' "
-                f"(missing storage.buckets.get or bucket doesn't exist)."
-            )
+        # Test authentication by listing buckets
+        list(storage_client.list_buckets(max_results=1))
+        logger.info("GCS authentication successful")
 
-        # Optional: also verify we can list objects under the prefix (storage.objects.list)
-        next(bucket.list_blobs(prefix=GCSConfig.SOURCE_PREFIX, max_results=1), None)
-
-        logger.info("GCS authentication successful (bucket access verified)")
         return storage_client
-
     except Exception as e:
         logger.error(f"GCS authentication failed: {e}")
         return None
+
 
 def get_storage_client() -> Optional[storage.Client]:
     """

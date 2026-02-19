@@ -1,5 +1,6 @@
 """
 Paper replication agent pipeline for the Autonomous Quantitative Investment Research project.
+(v2 — strict JSON contract, tool-call budgets, sanitized tool results)
 
 This LangGraph workflow:
 1) Prompts the user to select an LLM
@@ -15,6 +16,12 @@ This LangGraph workflow:
    - Agent 6: generate cross-sectional transforms + factor composer code
 4) Produces a single python module string (replication_code) that can be saved/executed by a human.
 
+Changes from v1:
+- _extract_json: balanced-brace scanner replaces greedy regex; ast.literal_eval removed.
+- sanitize_tool_result(): truncates snippets, strips tracebacks/log lines, caps count.
+- _force_json: minimal 3-line repair prompt instead of re-sending full system prompt.
+- _run_react_json_agent: one JSON retry before repair; tool-budget cutoff disables tools.
+- Agent nodes: use build_system_prompt() with per-agent tool budgets; lowered max_rounds.
 """
 
 # Load environment variables BEFORE any langchain/langgraph imports
@@ -48,6 +55,7 @@ from Agents.prompts import (
     AGENT45_SYSTEM,
     AGENT5_SYSTEM,
     AGENT6_SYSTEM,
+    build_system_prompt,
 )
 
 
@@ -57,6 +65,12 @@ logging.basicConfig(
     format=LoggingConfig.FORMAT,
 )
 logger = logging.getLogger(LoggingConfig.LOGGER_NAME)
+
+# ---------------------------------------------------------------------
+# Constants for tool-result sanitization
+# ---------------------------------------------------------------------
+MAX_SNIPPET_CHARS = 600
+MAX_SNIPPETS_PER_CALL = 5
 
 # ---------------------------------------------------------------------
 # Context variables (tools access the current paper + dictionaries)
@@ -213,75 +227,209 @@ def _extract_abstract(paper_text: str) -> str:
     return t[:1500].strip()
 
 
+# =====================================================================
+# JSON EXTRACTION — v2: balanced-brace scanner, no ast.literal_eval
+# =====================================================================
 def _extract_json(text: str) -> dict:
-    """Parse a JSON object from an LLM response (defensive)."""
-    if text is None:
+    """
+    Extract the first valid JSON object from LLM output.
+
+    Strategy:
+    1. Strip markdown code fences.
+    2. Try direct json.loads (fast path).
+    3. Find the first balanced { ... } block via brace counting.
+    4. Attempt json.loads on that block.
+    5. Apply minimal safe repairs (trailing commas, single quotes, JS comments).
+    6. Raise ValueError if all attempts fail.  (No ast.literal_eval.)
+    """
+    if not text or not text.strip():
         raise ValueError("Empty response from model")
+
     raw = text.strip()
 
-    # Strip ``` fences if present
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        raw = raw.replace("json", "", 1).strip()
+    # Strip markdown code fences
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```\s*$", "", raw)
+    raw = raw.strip()
 
-    # Try direct load
+    # Fast path: direct parse
     try:
         return json.loads(raw)
-    except Exception:
-        pass
-
-    # Try to locate first {...} block
-    m = re.search(r"\{.*\}", raw, flags=re.S)
-    if not m:
-        raise ValueError(f"Model did not return JSON. Raw output:\n{raw}")
-
-    candidate = m.group(0)
-
-    # Try raw_decode first (fast path)
-    decoder = json.JSONDecoder()
-    try:
-        obj, _ = decoder.raw_decode(candidate)
-        return obj
     except json.JSONDecodeError:
         pass
 
-    # --- Repair common LLaMA JSON errors ---
+    # Find first balanced { ... } using brace counter
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError(f"No JSON object found. Raw output:\n{raw[:500]}")
+
+    depth = 0
+    candidate = None
+    for i in range(start, len(raw)):
+        if raw[i] == "{":
+            depth += 1
+        elif raw[i] == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = raw[start : i + 1]
+                break
+
+    if candidate is None:
+        raise ValueError(f"Unbalanced braces in model output. Raw:\n{raw[:500]}")
+
+    # Try parsing the balanced candidate
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+
+    # --- Minimal safe repairs ---
     repaired = candidate
-    # 1. Replace single-quoted keys/values with double quotes
+    # 1. Remove trailing commas before } or ]
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    # 2. Remove JavaScript-style comments
+    repaired = re.sub(r"//[^\n]*", "", repaired)
+    # 3. Replace single-quoted keys/values with double quotes
     repaired = re.sub(r"(?<=[\{,\s])\s*'([^']+)'\s*:", r' "\1":', repaired)
     repaired = re.sub(r":\s*'([^']*)'", r': "\1"', repaired)
-    # 2. Remove trailing commas before } or ]
-    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
-    # 3. Remove JavaScript-style comments
-    repaired = re.sub(r"//[^\n]*", "", repaired)
+    # 4. Replace JS-style NaN/Infinity with null
+    repaired = re.sub(r"\bNaN\b", "null", repaired)
+    repaired = re.sub(r"\bInfinity\b", "null", repaired)
 
     try:
-        obj, _ = decoder.raw_decode(repaired)
-        logger.warning("JSON required repair (trailing comma / single quotes)")
-        return obj
+        return json.loads(repaired)
     except json.JSONDecodeError:
         pass
 
-    # Last resort: try ast.literal_eval (handles Python dict literals)
-    import ast
-    try:
-        obj = ast.literal_eval(candidate)
-        if isinstance(obj, dict):
-            logger.warning("JSON parsed via ast.literal_eval fallback")
-            return obj
-    except (ValueError, SyntaxError):
-        pass
-
+    # All attempts failed
     raise ValueError(
-        f"Could not parse JSON even after repair. Raw output:\n{candidate[:500]}"
+        f"Could not parse JSON even after repair. Candidate:\n{candidate[:500]}"
     )
 
 
+# =====================================================================
+# TOOL-RESULT SANITIZATION — v2: truncate, strip tracebacks, cap count
+# =====================================================================
+def sanitize_tool_result(result: Any, tool_name: str) -> str:
+    """
+    Clean and truncate tool output before putting into a ToolMessage.
+
+    Guarantees:
+    - List results capped to MAX_SNIPPETS_PER_CALL items.
+    - Each string truncated to MAX_SNIPPET_CHARS characters.
+    - Stack traces and log lines stripped.
+    - Always returns valid JSON string.
+    """
+    try:
+        if isinstance(result, list):
+            cleaned = []
+            for item in result[:MAX_SNIPPETS_PER_CALL]:
+                s = str(item).strip()
+                # Strip stack traces
+                s = re.sub(
+                    r"Traceback \(most recent call last\).*",
+                    "", s, flags=re.S,
+                )
+                # Strip common log-line patterns
+                s = re.sub(
+                    r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?"
+                    r"(INFO|WARN|WARNING|ERROR|DEBUG).*?\n",
+                    "", s,
+                )
+                # Truncate
+                if len(s) > MAX_SNIPPET_CHARS:
+                    s = s[:MAX_SNIPPET_CHARS] + "..."
+                s = s.strip()
+                if s:
+                    cleaned.append(s)
+            payload = {"tool": tool_name, "result": cleaned}
+        elif isinstance(result, dict):
+            # For dict results (e.g., Sharadar tool), truncate string values
+            truncated = {}
+            for k, v in result.items():
+                if isinstance(v, str) and len(v) > MAX_SNIPPET_CHARS:
+                    truncated[k] = v[:MAX_SNIPPET_CHARS] + "..."
+                else:
+                    truncated[k] = v
+            payload = {"tool": tool_name, "result": truncated}
+        else:
+            payload = {"tool": tool_name, "result": str(result)[:MAX_SNIPPET_CHARS]}
+
+        return json.dumps(payload, default=str, ensure_ascii=False)
+
+    except Exception:
+        return json.dumps({
+            "tool": tool_name,
+            "result": "Tool result could not be serialized",
+            "error": "sanitization_failed",
+        })
+
+
+# =====================================================================
+# JSON REPAIR — v3: uses accumulated messages, never crashes pipeline
+# =====================================================================
+_REPAIR_PROMPT_WITH_TEXT = (
+    "You previously produced text that is not valid JSON.\n"
+    "Convert it to a single valid JSON object matching the required schema.\n"
+    "Output ONLY the JSON object. No prose, no markdown, no code fences.\n\n"
+    "TEXT TO FIX:\n{text}\n"
+)
+
+_REPAIR_PROMPT_FROM_CONTEXT = (
+    "STOP. You must now return your final answer.\n"
+    "Based on everything discussed above, return ONLY a single valid JSON object "
+    "matching the required schema.\n"
+    "No prose, no markdown, no code fences. Just the JSON."
+)
+
+
+def _force_json(llm, broken_text: str, messages: List[BaseMessage] = None) -> dict:
+    """
+    Last-resort JSON repair. Two strategies:
+
+    1. If we have accumulated messages context, append a stern finalize
+       instruction and re-invoke with full context (the model can see
+       all tool results and prior attempts).
+    2. If that fails or messages aren't available, try the minimal
+       text-repair prompt.
+    3. If everything fails, return a fallback error dict instead of crashing.
+    """
+    # Strategy 1: Use accumulated messages (preferred — model has full context)
+    if messages:
+        try:
+            repair_messages = list(messages) + [
+                HumanMessage(content=_REPAIR_PROMPT_FROM_CONTEXT)
+            ]
+            resp = llm.invoke(repair_messages)
+            return _extract_json(getattr(resp, "content", "") or "")
+        except (ValueError, Exception) as e:
+            logger.warning(f"Context-based JSON repair failed: {e}")
+
+    # Strategy 2: Text-based repair (minimal prompt)
+    if broken_text and broken_text.strip():
+        try:
+            truncated = broken_text[:3000]
+            resp = llm.invoke(_REPAIR_PROMPT_WITH_TEXT.format(text=truncated))
+            return _extract_json(getattr(resp, "content", "") or "")
+        except (ValueError, Exception) as e:
+            logger.warning(f"Text-based JSON repair also failed: {e}")
+
+    # Strategy 3: Return a fallback error dict (never crash the pipeline)
+    logger.error(
+        "All JSON repair strategies failed. Returning fallback error output."
+    )
+    return {
+        "_error": "json_repair_failed",
+        "_message": "Model could not produce valid JSON after multiple attempts.",
+        "missing_or_unclear": ["entire output — model failed to produce valid JSON"],
+    }
+
+
+# =====================================================================
+# Sharadar data dictionary loading
+# =====================================================================
 def _load_sharadar_data_dicts() -> Dict[str, Dict[str, str]]:
-    """
-    Load Sharadar data dictionaries.
-    """
-    # ## CHANGE IF NEEDED:
+    """Load Sharadar data dictionaries from markdown files."""
     SH_DD_DIR = Path(__file__).parent / "data_dicts"  # Agents/data_dicts/
     tables = ["SF1", "DAILY", "SEP"]
 
@@ -319,18 +467,62 @@ def _read_data_dictionary(md_path: Path) -> Dict[str, str]:
     return out
 
 
+# =====================================================================
+# Tool-arg coercion — vLLM/LLaMA 3.1 workaround
+# =====================================================================
+def _coerce_tool_args(args: dict) -> dict:
+    """
+    Fix vLLM/LLaMA 3.1 tool-call arg serialization bugs.
+
+    Known issue: List[str] parameters arrive as JSON *strings* instead of
+    actual lists, e.g. keys='["operating cash flow", "revenue"]' rather
+    than keys=["operating cash flow", "revenue"].
+
+    This detects string values that look like JSON arrays/objects and
+    parses them back into native Python types.
+    """
+    if not isinstance(args, dict):
+        return args
+
+    coerced = {}
+    for k, v in args.items():
+        if isinstance(v, str):
+            stripped = v.strip()
+            if (stripped.startswith("[") and stripped.endswith("]")) or \
+               (stripped.startswith("{") and stripped.endswith("}")):
+                try:
+                    coerced[k] = json.loads(stripped)
+                    continue
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        coerced[k] = v
+    return coerced
+
+
+# =====================================================================
+# ReAct JSON Agent Loop — v2: tightened budgets, sanitized tools,
+#   one JSON retry before repair, tool-budget cutoff disables tools
+# =====================================================================
 def _run_react_json_agent(
     *,
     llm,
     system_prompt: str,
     user_payload: Dict[str, Any],
     tools: List[Any],
-    max_rounds: int = 14,
+    max_rounds: int = 8,
+    max_tool_calls_per_round: int = 3,
+    max_total_tool_calls: int = 8,
 ) -> Dict[str, Any]:
     """
-    Minimal ReAct-style loop:
-    - LLM may call tools; we execute and feed ToolMessage back.
-    - Ends when the LLM returns a final JSON payload (no tool calls).
+    Minimal ReAct-style loop with strict safety rails.
+
+    Protocol:
+    - LLM responds in one of two modes per round:
+        MODE A: tool call(s) → we execute, feed ToolMessage back, loop.
+        MODE B: final JSON → we parse, return.
+    - Tool budget enforced: once exhausted, LLM invoked WITHOUT tools bound.
+    - One JSON-retry allowed before falling through to _force_json repair.
+    - LLaMA 3 / vLLM constraint: tool calls split into one-per-AIMessage.
     """
     llm_with_tools = llm.bind_tools(tools)
     tool_map = {t.name: t for t in tools}
@@ -340,72 +532,101 @@ def _run_react_json_agent(
         HumanMessage(content=json.dumps(user_payload, indent=2)),
     ]
 
-    for round_num in range(max_rounds):
-        resp = llm_with_tools.invoke(messages)
+    total_tool_calls = 0
+    json_retry_used = False  # allow exactly one in-loop JSON retry
+    last_content = ""
 
-        # Detect truncated output (model hit max_tokens before finishing)
-        finish_reason = (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
+    for round_num in range(max_rounds):
+        # Once tool budget is exhausted, invoke WITHOUT tools to force JSON output
+        tools_available = total_tool_calls < max_total_tool_calls
+        resp = (llm_with_tools if tools_available else llm).invoke(messages)
+
+        # --- Handle truncated output (model hit max_tokens) ---
+        finish_reason = (
+            (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
+        )
         if finish_reason == "length":
             logger.warning(
                 f"Round {round_num + 1}: Response truncated (finish_reason='length'). "
-                "Asking model to retry with concise output."
+                "Asking model to retry concisely."
             )
             messages.append(resp)
             messages.append(
                 HumanMessage(
                     content=(
-                        "Your response was cut off because it exceeded the token limit. "
-                        "Please retry and be MORE CONCISE. Use shorter descriptions, "
-                        "abbreviate where possible, and omit unnecessary detail. "
+                        "Your response was cut off. Be MORE CONCISE. "
                         "Output ONLY the required JSON object, nothing else."
                     )
                 )
             )
             continue
 
-        # Check for invalid_tool_calls (vLLM returns these when parser fails)
+        # --- Handle invalid / malformed tool calls ---
         invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
         if invalid_tcs:
             logger.warning(
-                f"Round {round_num + 1}: Model produced {len(invalid_tcs)} invalid tool call(s). "
-                "Asking model to retry with correct format."
+                f"Round {round_num + 1}: {len(invalid_tcs)} invalid tool call(s). "
+                "Asking model to retry."
             )
             messages.append(resp)
             messages.append(
                 HumanMessage(
                     content=(
-                        "Your last tool call was malformed and could not be parsed. "
-                        "You must include the 'name' key. Correct format:\n"
-                        '{"name": "<tool_name>", "parameters": {<args>}}\n'
-                        f"Available tools: {list(tool_map.keys())}. Please try again."
+                        f"Malformed tool call. Available tools: {list(tool_map.keys())}. "
+                        "Use the correct format and try again."
                     )
                 )
             )
             continue
 
         tool_calls = getattr(resp, "tool_calls", None) or []
+
+        # =============================================================
+        # MODE A — Tool calls
+        # =============================================================
         if tool_calls:
-            # LLaMA 3 only supports single tool-calls per turn.
-            # Split multiple tool calls into separate (AIMessage, ToolMessage) pairs
-            # so the chat template never sees >1 tool call on a single AIMessage.
+            # Cap per-round
+            if len(tool_calls) > max_tool_calls_per_round:
+                logger.warning(
+                    f"Round {round_num + 1}: {len(tool_calls)} tool calls requested; "
+                    f"capping to {max_tool_calls_per_round}."
+                )
+                tool_calls = tool_calls[:max_tool_calls_per_round]
+
+            total_tool_calls += len(tool_calls)
+
+            if total_tool_calls >= max_total_tool_calls:
+                logger.warning(
+                    f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
+                    "Next round will force final JSON (tools disabled)."
+                )
+
             if len(tool_calls) > 1:
                 logger.info(
-                    f"Round {round_num + 1}: LLM requested {len(tool_calls)} tool calls. "
+                    f"Round {round_num + 1}: {len(tool_calls)} tool calls. "
                     f"Processing sequentially: {[tc.get('name') for tc in tool_calls]}"
                 )
 
             for tc in tool_calls:
                 name = tc.get("name")
                 args = tc.get("args", {}) or {}
-                # Handle nested properties format (LLaMA sometimes wraps args in 'properties')
-                if "properties" in args and isinstance(args["properties"], dict):
-                    args = args["properties"]
                 tool_id = tc.get("id")
 
+                # LLaMA sometimes wraps args in "properties"
+                if isinstance(args, dict) and "properties" in args and isinstance(args["properties"], dict):
+                    args = args["properties"]
+
+                # --- vLLM/LLaMA 3.1 arg coercion ---
+                # vLLM often serializes List[str] params as a JSON *string*
+                # e.g. keys='["a", "b"]' instead of keys=["a", "b"]
+                # Detect and fix: any string value that looks like a JSON array → parse it.
+                args = _coerce_tool_args(args)
+
+                # Unknown tool → ask to retry
                 if name not in tool_map:
                     logger.warning(
-                        f"Round {round_num + 1}: Model hallucinated tool '{name}'. "
-                        f"Available: {list(tool_map.keys())}. Asking to retry."
+                        f"Round {round_num + 1}: Unknown tool '{name}'. "
+                        f"Available: {list(tool_map.keys())}."
                     )
                     messages.append(resp)
                     messages.append(
@@ -413,60 +634,119 @@ def _run_react_json_agent(
                             content=(
                                 f"Tool '{name}' does not exist. "
                                 f"Available tools: {list(tool_map.keys())}. "
-                                "Please use one of the available tools."
+                                "Please use one of the available tools or return final JSON."
                             )
                         )
                     )
-                    break  # break out of the for-loop over tool_calls, continue ReAct loop
+                    break  # break tool loop; next round will retry
 
-                # Create a NEW AIMessage with ONLY this single tool call
+                # IMPORTANT: one tool call per AIMessage (LLaMA 3 constraint)
                 single_tool_ai_msg = AIMessage(
                     content="",
-                    tool_calls=[{"name": name, "args": args, "id": tool_id, "type": "tool_call"}],
+                    tool_calls=[{
+                        "name": name,
+                        "args": args,
+                        "id": tool_id,
+                        "type": "tool_call",
+                    }],
                 )
                 messages.append(single_tool_ai_msg)
 
-                result = tool_map[name].invoke(args)
+                # Execute tool with exception handling
+                try:
+                    result = tool_map[name].invoke(args)
+                except Exception as e:
+                    logger.warning(f"Tool '{name}' raised {type(e).__name__}: {e}")
+                    result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
+
+                # Sanitize before feeding back to model
                 messages.append(
                     ToolMessage(
-                        content=json.dumps({"tool": name, "args": args, "result": result}, default=str),
+                        content=sanitize_tool_result(result, name),
                         tool_call_id=tool_id,
                     )
                 )
-            continue
 
-        # No tool calls — append resp as-is (plain text, no tool_calls to worry about)
+            continue  # next ReAct round
+
+        # =============================================================
+        # MODE B — Final JSON attempt (no tool calls in response)
+        # =============================================================
+        content = getattr(resp, "content", "") or ""
+        last_content = content
         messages.append(resp)
 
-        # Check if content looks like a failed tool call
-        # (vLLM puts malformed tool JSON into content when parser fails)
-        content = getattr(resp, "content", "") or ""
-        if content and not invalid_tcs:
-            try:
-                maybe_tc = json.loads(content)
-                if isinstance(maybe_tc, dict) and "parameters" in maybe_tc and "name" not in maybe_tc:
-                    logger.warning(
-                        f"Round {round_num + 1}: Content looks like a tool call missing 'name'. "
-                        "Asking model to retry."
-                    )
-                    messages.append(
-                        HumanMessage(
-                            content=(
-                                "Your response looks like a tool call but is missing the 'name' key. "
-                                "Correct format:\n"
-                                '{"name": "<tool_name>", "parameters": {<args>}}\n'
-                                f"Available tools: {list(tool_map.keys())}. Please try again."
-                            )
+        # Check if content looks like a malformed tool call
+        try:
+            maybe_tc = json.loads(content)
+            if isinstance(maybe_tc, dict) and "parameters" in maybe_tc and "name" not in maybe_tc:
+                logger.warning(
+                    f"Round {round_num + 1}: Content looks like tool call missing 'name'. "
+                    "Asking model to retry."
+                )
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "Your response looks like a tool call but is missing 'name'. "
+                            f"Available tools: {list(tool_map.keys())}. "
+                            "Either call a tool properly or return your final JSON."
                         )
                     )
-                    continue
-            except (json.JSONDecodeError, TypeError):
-                pass
+                )
+                continue
+        except (json.JSONDecodeError, TypeError):
+            pass
 
-        # Final answer (should be JSON)
+        # Try to parse as final JSON
+        try:
+            return _extract_json(content)
+        except ValueError:
+            # Allow exactly ONE in-loop retry before repair
+            if not json_retry_used:
+                json_retry_used = True
+                logger.warning(
+                    f"Round {round_num + 1}: Non-JSON final output. "
+                    "Requesting retry (1 retry allowed)."
+                )
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "Your output was not valid JSON. "
+                            "Return ONLY the JSON object matching the schema. "
+                            "No prose, no markdown, no code fences."
+                        )
+                    )
+                )
+                continue
+            else:
+                # Second failure → last-resort repair (with full context)
+                logger.warning(
+                    f"Round {round_num + 1}: Second JSON failure. "
+                    "Falling through to JSON repair."
+                )
+                return _force_json(llm, content, messages=messages)
+
+    # -----------------------------------------------------------------
+    # Exhausted all rounds — force one final attempt
+    # -----------------------------------------------------------------
+    logger.warning(
+        f"Exhausted {max_rounds} rounds without final JSON. "
+        "Forcing final JSON output."
+    )
+    messages.append(
+        HumanMessage(
+            content=(
+                "STOP. You have used all available rounds. "
+                "Return ONLY the final JSON object now. No tools. No prose."
+            )
+        )
+    )
+    resp = llm.invoke(messages)  # base LLM, no tools
+    content = getattr(resp, "content", "") or ""
+    try:
         return _extract_json(content)
-
-    raise RuntimeError("Exceeded max tool rounds without producing a final JSON answer.")
+    except ValueError:
+        return _force_json(llm, content, messages=messages)
 
 
 # ---------------------------------------------------------------------
@@ -488,7 +768,11 @@ def validate_endpoint_node(state: AgentState) -> AgentState:
     logger.info(f"Validating endpoint: model={model_name} url={models_url}")
 
     try:
-        resp = httpx.get(models_url, headers={"Authorization": f"Bearer {LLMConfig.LAMBDA_API_KEY}"}, timeout=10)
+        resp = httpx.get(
+            models_url,
+            headers={"Authorization": f"Bearer {LLMConfig.LAMBDA_API_KEY}"},
+            timeout=10,
+        )
         resp.raise_for_status()
         available = [m["id"] for m in resp.json().get("data", [])]
     except Exception as e:
@@ -506,6 +790,23 @@ def validate_endpoint_node(state: AgentState) -> AgentState:
 # ---------------------------------------------------------------------
 # LangGraph nodes (multi-agent paper replication pipeline)
 # ---------------------------------------------------------------------
+def _log_agent_output(agent_name: str, output: dict, max_chars: int = 3000):
+    """Log a compact summary of agent JSON output for terminal debugging."""
+    try:
+        summary = json.dumps(output, indent=2, default=str)
+        if len(summary) > max_chars:
+            summary = summary[:max_chars] + "\n... (truncated)"
+        logger.info(
+            f"\n{'='*60}\n"
+            f"  {agent_name} OUTPUT\n"
+            f"{'='*60}\n"
+            f"{summary}\n"
+            f"{'='*60}"
+        )
+    except Exception:
+        logger.info(f"{agent_name} OUTPUT: (could not serialize)")
+
+
 def triage_paper_node(state: AgentState) -> AgentState:
     """Agent 1: classify paper type using the abstract."""
     paper_text = state.get("paper_text", "")
@@ -514,7 +815,8 @@ def triage_paper_node(state: AgentState) -> AgentState:
     model_choice = state.get("model_choice", "openai")
     llm = get_llm_by_name(model_choice)
 
-    prompt = AGENT1_PROMPT.format(abstract=abstract)
+    # Build prompt with JSON contract (no tools for Agent 1)
+    prompt = build_system_prompt(AGENT1_PROMPT, max_tool_calls=0, abstract=abstract)
 
     try:
         resp = llm.invoke(prompt)
@@ -528,6 +830,8 @@ def triage_paper_node(state: AgentState) -> AgentState:
             "needs_full_paper": True,
             "uncertainties": [str(e)],
         }
+
+    _log_agent_output("Agent 1 (triage)", paper_type)
 
     return {
         **state,
@@ -551,11 +855,15 @@ def agent2_extract_paper_vars_node(state: AgentState) -> AgentState:
 
     paper_vars = _run_react_json_agent(
         llm=llm,
-        system_prompt=AGENT2_SYSTEM,
+        system_prompt=build_system_prompt(AGENT2_SYSTEM, max_tool_calls=6),
         user_payload=payload,
         tools=[get_matching_content],
-        max_rounds=12,
+        max_rounds=8,
+        max_tool_calls_per_round=3,
+        max_total_tool_calls=6,
     )
+
+    _log_agent_output("Agent 2 (paper_vars)", paper_vars)
 
     return {**state, "paper_vars": paper_vars}
 
@@ -576,11 +884,15 @@ def agent3_extract_factor_logic_node(state: AgentState) -> AgentState:
 
     paper_logic = _run_react_json_agent(
         llm=llm,
-        system_prompt=AGENT3_SYSTEM,
+        system_prompt=build_system_prompt(AGENT3_SYSTEM, max_tool_calls=8),
         user_payload=payload,
         tools=[get_matching_content],
-        max_rounds=14,
+        max_rounds=10,
+        max_tool_calls_per_round=3,
+        max_total_tool_calls=8,
     )
+
+    _log_agent_output("Agent 3 (paper_logic)", paper_logic)
 
     return {**state, "paper_logic": paper_logic}
 
@@ -596,13 +908,25 @@ def agent325_build_paper_spec_node(state: AgentState) -> AgentState:
         "paper_logic": state.get("paper_logic", {}),
     }
 
-    resp = llm.invoke(
-        [
-            SystemMessage(AGENT325_SYSTEM),
-            HumanMessage(content=json.dumps(payload, indent=2)),
-        ]
-    )
-    paper_spec = _extract_json(getattr(resp, "content", ""))
+    # Agent 3.25 has no tools — just a single LLM call with JSON contract
+    system_prompt = build_system_prompt(AGENT325_SYSTEM, max_tool_calls=0)
+
+    agent_messages = [
+        SystemMessage(system_prompt),
+        HumanMessage(content=json.dumps(payload, indent=2)),
+    ]
+
+    resp = llm.invoke(agent_messages)
+    content = getattr(resp, "content", "") or ""
+
+    try:
+        paper_spec = _extract_json(content)
+    except ValueError:
+        logger.warning("Agent 3.25: JSON extraction failed; attempting repair.")
+        agent_messages.append(resp)
+        paper_spec = _force_json(llm, content, messages=agent_messages)
+
+    _log_agent_output("Agent 3.25 (paper_spec)", paper_spec)
 
     return {**state, "paper_spec": paper_spec}
 
@@ -618,121 +942,21 @@ def agent4_map_to_sharadar_node(state: AgentState) -> AgentState:
 
     payload = {
         "paper_spec": state.get("paper_spec", {}),
-        "notes": "Use only get_sh_matching_variables(keys) tool for mapping.",
     }
 
     sharadar_mappings = _run_react_json_agent(
         llm=llm,
-        system_prompt=AGENT4_SYSTEM,
+        system_prompt=build_system_prompt(AGENT4_SYSTEM, max_tool_calls=10),
         user_payload=payload,
         tools=[get_sh_matching_variables],
-        max_rounds=16,
+        max_rounds=12,
+        max_tool_calls_per_round=3,
+        max_total_tool_calls=10,
     )
+
+    _log_agent_output("Agent 4 (sharadar_mappings)", sharadar_mappings)
 
     return {**state, "sharadar_mappings": sharadar_mappings}
-
-
-def agent45_build_factor_spec_node(state: AgentState) -> AgentState:
-    """Agent 4.5: build FACTOR_SPEC (no tools)."""
-    model_choice = state.get("model_choice", "openai")
-    llm = get_llm_by_name(model_choice)
-
-    payload = {
-        "paper_spec": state.get("paper_spec", {}),
-        "sharadar_mappings": state.get("sharadar_mappings", {}),
-    }
-
-    resp = llm.invoke(
-        [
-            SystemMessage(AGENT45_SYSTEM),
-            HumanMessage(content=json.dumps(payload, indent=2)),
-        ]
-    )
-    factor_spec = _extract_json(getattr(resp, "content", ""))
-
-    return {**state, "factor_spec": factor_spec}
-
-
-def agent5_codegen_ts_features_node(state: AgentState) -> AgentState:
-    """Agent 5: generate TS_PLAN + TS_FEATURES python code."""
-    model_choice = state.get("model_choice", "openai")
-    llm = get_llm_by_name(model_choice)
-
-    factor_spec = state.get("factor_spec", {})
-    resp = llm.invoke(
-        [
-            SystemMessage(AGENT5_SYSTEM),
-            HumanMessage(content="FACTOR_SPEC:\n" + json.dumps(factor_spec, indent=2)),
-        ]
-    )
-    ts_code = getattr(resp, "content", "") or ""
-
-    # Validate required tokens
-    for tok in ("TS_PLAN", "TS_FEATURES"):
-        if tok not in ts_code:
-            raise ValueError(f"Agent 5 output missing {tok}")
-
-    return {**state, "ts_code": ts_code}
-
-
-def agent6_codegen_cs_and_composer_node(state: AgentState) -> AgentState:
-    """Agent 6: generate CS_PLAN + CS_TRANSFORMS + compose_factor python code."""
-    model_choice = state.get("model_choice", "openai")
-    llm = get_llm_by_name(model_choice)
-
-    factor_spec = state.get("factor_spec", {})
-    resp = llm.invoke(
-        [
-            SystemMessage(AGENT6_SYSTEM),
-            HumanMessage(content="FACTOR_SPEC:\n" + json.dumps(factor_spec, indent=2)),
-        ]
-    )
-    cs_code = getattr(resp, "content", "") or ""
-
-    for tok in ("CS_PLAN", "CS_TRANSFORMS", "def compose_factor"):
-        if tok not in cs_code:
-            raise ValueError(f"Agent 6 output missing required token: {tok}")
-
-    return {**state, "cs_code": cs_code}
-
-
-def finalize_replication_code_node(state: AgentState) -> AgentState:
-    """Combine Agent 5 + Agent 6 outputs into a single, runnable module string."""
-    ts_code = state.get("ts_code", "")
-    cs_code = state.get("cs_code", "")
-
-    module_code = (
-        "\n".join(
-            [
-                '"""',
-                "Auto-generated replication module (Agent 5 + Agent 6).",
-                "",
-                "IMPORTANT",
-                "- This module is generated by an LLM planner. Review before executing.",
-                "- Data loading / joins across Sharadar tables are intentionally NOT implemented here.",
-                "  Build a panel with required columns, then call compose_factor(panel).",
-
-                '"""',
-                "",
-                "import numpy as np",
-                "import pandas as pd",
-                "",
-                "# -------------------------------------------------------------------",
-                "# Agent 5 output: per-ticker time-series inputs/features",
-                "# -------------------------------------------------------------------",
-                ts_code.strip(),
-                "",
-                "# -------------------------------------------------------------------",
-                "# Agent 6 output: cross-sectional transforms + final composer",
-                "# -------------------------------------------------------------------",
-                cs_code.strip(),
-                "",
-            ]
-        )
-        + "\n"
-    )
-
-    return {**state, "replication_code": module_code}
 
 
 # ---------------------------------------------------------------------
@@ -761,10 +985,6 @@ def build_graph() -> StateGraph:
     graph.add_node("agent3_logic", agent3_extract_factor_logic_node)
     graph.add_node("agent325_paper_spec", agent325_build_paper_spec_node)
     graph.add_node("agent4_sharadar_map", agent4_map_to_sharadar_node)
-    graph.add_node("agent45_factor_spec", agent45_build_factor_spec_node)
-    graph.add_node("agent5_ts_codegen", agent5_codegen_ts_features_node)
-    graph.add_node("agent6_cs_codegen", agent6_codegen_cs_and_composer_node)
-    graph.add_node("finalize", finalize_replication_code_node)
 
     graph.set_entry_point("select_model")
 
@@ -779,11 +999,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("agent2_vars", "agent3_logic")
     graph.add_edge("agent3_logic", "agent325_paper_spec")
     graph.add_edge("agent325_paper_spec", "agent4_sharadar_map")
-    graph.add_edge("agent4_sharadar_map", "agent45_factor_spec")
-    graph.add_edge("agent45_factor_spec", "agent5_ts_codegen")
-    graph.add_edge("agent5_ts_codegen", "agent6_cs_codegen")
-    graph.add_edge("agent6_cs_codegen", "finalize")
-    graph.add_edge("finalize", END)
+    graph.add_edge("agent4_sharadar_map", END)
 
     return graph.compile()
 
