@@ -2,117 +2,7 @@
 
 **AI-native quant research system that uses fine-tuned LLaMA-based agents to replicate the workflows of junior quantitative researchers — from reading papers and generating signals to backtesting and writing alpha memos.**
 
-
-## Project Structure
-
-```text
-agentic-quant-research/
-├── README.md
-├── pyproject.toml
-├── .gitignore
-├── .env.example
-├── src/
-│   └── quant_agent/
-│       ├── __init__.py
-│       ├── config/
-│       │   ├── base.yaml
-│       │   ├── dev.yaml
-│       │   └── prod.yaml
-│       ├── data/
-│       │   ├── schemas.py
-│       │   └── loaders.py
-│       ├── pipelines/
-│       │   ├── paper_inventory_pipeline.py
-│       │   ├── paper_quality_filter_pipeline.py
-│       │   ├── cot_instruction_pipeline.py
-│       │   ├── pdf_embedding_pipeline.py
-│       │   └── finetuning_pipeline.py
-│       ├── embeddings/
-│       │   ├── models.py
-│       │   ├── vector_store.py
-│       │   └── index_utils.py
-│       ├── agents/
-│       │   ├── base_agent.py
-│       │   ├── research_agent.py
-│       │   ├── replication_agent.py
-│       │   ├── signal_agent.py
-│       │   └── orchestration.py
-│       ├── tools/
-│       │   ├── paper_search_tool.py
-│       │   ├── paper_metadata_tool.py
-│       │   ├── paper_quality_filter_tool.py
-│       │   ├── pdf_embedding_tool.py
-│       │   ├── cot_dataset_tool.py
-│       │   ├── research_memory_tool.py
-│       │   ├── signal_backtest_tool.py
-│       │   ├── factor_library_tool.py
-│       │   ├── performance_report_tool.py
-│       │   ├── risk_report_tool.py
-│       │   ├── agent_finetuning_tool.py
-│       │   └── agent_evaluation_tool.py
-│       ├── evaluation/
-│       │   ├── ai_judge.py
-│       │   ├── research_scores.py
-│       │   └── reports.py
-│       └── utils/
-│           ├── logging.py
-│           ├── paths.py
-│           └── seed_utils.py
-├── notebooks/
-│   ├── 01_paper_inventory/
-│   │   └── Paper_Quality_Filter.ipynb
-│   ├── 02_instruction_cot/
-│   │   ├── Embedding_CoT_Instruction_Pipeline.ipynb
-│   │   └── Copy of QuantAgent-FineTuning Test.ipynb
-│   ├── 03_pdf_embedding/
-│   │   └── Embedding_PDF.ipynb
-│   └── 04_architecture_and_planning/
-│       ├── Model_Training_Schematic.ipynb
-│       └── scratchpads.ipynb
-├── docs/
-│   ├── problem-statement/
-│   │   ├── Problem_Statement_and_Situational_Analysis.md
-│   │   └── Problem Statement & Situational Analysis v1 (1).docx
-│   ├── pitch/
-│   │   ├── Pitch Deck (2).pptx
-│   │   └── ADSP 34002 IP01 Capstone I.pptx
-│   ├── architecture/
-│   │   ├── Model Training Schematic (1).pptx
-│   │   └── system_design.md
-│   └── research/
-│       └── literature_review.md
-├── data/
-│   ├── raw/
-│   │   ├── arxiv_papers/
-│   │   ├── quantconnect_exports/
-│   │   └── metadata/
-│   ├── interim/
-│   │   ├── cleaned_papers.parquet
-│   │   └── quality_scores.parquet
-│   ├── processed/
-│   │   ├── filtered_papers.parquet
-│   │   └── instruct_cot_dataset.parquet
-│   └── models/
-│       ├── llama_archetype_01/
-│       ├── llama_archetype_02/
-│       └── tokenizer/
-├── scripts/
-│   ├── run_paper_inventory.py
-│   ├── run_paper_quality_filter.py
-│   ├── run_cot_instruction_pipeline.py
-│   ├── run_pdf_embedding.py
-│   ├── train_llama_agents.py
-│   └── evaluate_agents.py
-├── tests/
-│   ├── test_pipelines.py
-│   ├── test_embeddings.py
-│   ├── test_agents.py
-│   └── test_tools.py
-└── docker/
-    ├── Dockerfile
-    └── docker-compose.yaml
-```
-
+---
 
 ## 1. Project Overview
 
@@ -122,236 +12,336 @@ This project explores a different path: **scaling research capacity through auto
 
 We use:
 
-- **Fine-tuned LLaMA models** as research agents
+- **LangGraph** for multi-agent orchestration
+- **Fine-tuned LLaMA models** (via vLLM) as research agents
 - **Structured instruction + chain-of-thought (CoT) datasets** specific to quantitative finance
-- **Embedding and retrieval pipelines** over thousands of academic papers
-- **Tooling integration** (e.g., QuantConnect) for signal testing and backtesting
-- **AI-as-a-judge evaluation** to continuously score and improve research outputs   
+- **Embedding and retrieval pipelines** over academic papers
+- **Sharadar data integration** for signal testing and backtesting
+- **AI-as-a-judge evaluation** to continuously score and improve research outputs
 
-The end goal is an **AI-native quant research lab** where a small human team orchestrates dozens of specialized agents that autonomously propose, validate, and document trading strategies.
-
-This repository underpins the **UChicago MSADS Capstone I project _“The hedge fund industry can be disrupted with Agentic AI”_**, and the associated pitch deck for an **agentic AI-based quantitative hedge fund**.   
+This repository underpins our **UChicago MSADS Capstone project **.
 
 ---
 
-## 2. System Concept
+## 2. Architecture
 
-At full scale, the target architecture is:
+### LangGraph Workflow
 
-- **10 LLaMA-based agent archetypes** (scout, replication researcher, signal evaluator, strategist, alpha librarian, etc.)
-- **50 active agents** instantiated from those archetypes
-- **~240 signals/year** grouped into **~25 orthogonal themes**
-- Portfolio-level **Sharpe ≈ 3.5** at ~$10B GMV capacity, with a core team of ~7 humans.  
+The system implements a **multi-agent paper replication pipeline** using LangGraph:
 
-This repo focuses on building the **building blocks**:
+```
+┌─────────────────┐
+│  select_model   │  ← User selects LLM (OpenAI / vLLM LoRA)
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌────────┐ ┌──────────────────┐
+│validate│ │  select_paper    │  ← Download paper from GCS
+│endpoint│ │  load_markdown   │
+└────┬───┘ └────────┬─────────┘
+     │              │
+     └──────┬───────┘
+            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    PAPER REPLICATION PIPELINE                    │
+├─────────────────────────────────────────────────────────────────┤
+│  Agent 1: Paper Triage                                          │
+│    └─ Classifies paper type, factor family, expected frequency  │
+│                              ▼                                   │
+│  Agent 2: Economic Quantities Extractor  [ReAct + paper search] │
+│    └─ Identifies required variables, universe filters           │
+│                              ▼                                   │
+│  Agent 3: Factor Logic Extractor         [ReAct + paper search] │
+│    └─ Extracts formulas, lags, windows, rebalancing rules       │
+│                              ▼                                   │
+│  Agent 3.25: PAPER_SPEC Planner                                 │
+│    └─ Creates Sharadar-agnostic specification                   │
+│                              ▼                                   │
+│  Agent 4: Sharadar Mapper                [ReAct + dict search]  │
+│    └─ Maps paper quantities to Sharadar columns                 │
+│                              ▼                                   │
+│  Agent 4.5: FACTOR_SPEC Builder                                 │
+│    └─ Generates implementable factor specification              │
+│                              ▼                                   │
+│  Agent 5: Time-Series Code Generator                            │
+│    └─ Generates per-ticker feature engineering code             │
+│                              ▼                                   │
+│  Agent 6: Cross-Sectional Code Generator                        │
+│    └─ Generates cross-sectional transforms + factor composer    │
+└─────────────────────────────────────────────────────────────────┘
+            │
+            ▼
+┌─────────────────┐
+│    finalize     │  → Outputs: replication_code (Python module)
+└─────────────────┘
+```
 
-1. **Paper Inventory + Quality Filter**
-   - Ingest and clean a large corpus of quantitative finance papers (e.g., 15k+ arXiv papers).
-   - Filter down to a high-quality subset suited for replication and signal discovery. 
+### LangGraph Configuration
 
-2. **Instruction + CoT Dataset Pipeline**
-   - Generate 5k–10k+ structured instruction / CoT traces in the prototype phase.
-   - Long-run goal: ~50k high-quality instruct/CoT pairs per year for 10 agent archetypes.   
-
-3. **PDF Embedding & Retrieval**
-   - Embed full PDFs and metadata into a vector store (Faiss / Pinecone).
-   - Support paper lookup, section-level retrieval, and agent memory.
-
-4. **Fine-Tuning & Evaluation**
-   - Fine-tune LLaMA with LoRA on the curated instruct/CoT dataset.
-   - Evaluate agents with AI-as-a-judge scoring along axes like rigor, completeness, economic reasoning, and documentation quality.   
-
-## 3. Core Pipelines
-
-### 3.1 Paper Inventory and Quality Filter
-
-Goal: build a curated universe of quantitative finance papers suitable for replication and signal extraction.
-
-Main steps:
-
-- Ingest paper metadata and PDFs
-- Normalize and clean text and metadata
-- Apply rules and learned models to score and filter papers
-- Persist a filtered list for downstream pipelines
-
-Implemented in:
-
-- `notebooks/01_paper_inventory/Paper_Quality_Filter.ipynb`
-- `src/quant_agent/pipelines/paper_inventory_pipeline.py`
-- `src/quant_agent/pipelines/paper_quality_filter_pipeline.py`
-
-Outputs:
-
-- `data/processed/filtered_papers.parquet`
-- Optional CSV or JSON exports
-
-### 3.2 Instruction and CoT Generation
-
-Goal: create high-quality instruction and CoT pairs that encode junior quant researcher workflows.
-
-Main steps:
-
-- Start from human-designed tasks and prompts
-- Generate CoT traces using LLMs
-- Filter and score traces
-- Package them into training-ready datasets
-
-Implemented in:
-
-- `notebooks/02_instruction_cot/Embedding_CoT_Instruction_Pipeline.ipynb`
-- `notebooks/02_instruction_cot/Copy of QuantAgent-FineTuning Test.ipynb`
-- `src/quant_agent/pipelines/cot_instruction_pipeline.py`
-- `src/quant_agent/pipelines/finetuning_pipeline.py`
-
-Outputs:
-
-- `data/processed/instruct_cot_dataset.parquet`
-
-### 3.3 PDF Embedding and Retrieval
-
-Goal: turn paper PDFs into searchable vector representations for agent memory and retrieval.
-
-Main steps:
-
-- Load and chunk PDFs into sections or paragraphs
-- Compute text embeddings
-- Store vectors in a vector database
-- Provide retrieval APIs for agents
-
-Implemented in:
-
-- `notebooks/03_pdf_embedding/Embedding_PDF.ipynb`
-- `src/quant_agent/pipelines/pdf_embedding_pipeline.py`
-- `src/quant_agent/embeddings/`
-
-Outputs:
-
-- Vector indices and mapping files under `data/models/` and `data/processed/`
-
-### 3.4 LLaMA Fine-Tuning and Agent Archetypes
-
-Goal: fine-tune LLaMA using LoRA on the curated datasets to create specialized research agents.
-
-Main steps:
-
-- Load base LLaMA and tokenizer
-- Apply LoRA adapters for each archetype
-- Train on role-specific slices of the dataset
-- Save adapters and evaluation artifacts
-
-Implemented in:
-
-- `notebooks/02_instruction_cot/Copy of QuantAgent-FineTuning Test.ipynb`
-- `src/quant_agent/pipelines/finetuning_pipeline.py`
-- `src/quant_agent/agents/`
-
-Outputs:
-
-- LoRA adapters under `data/models/`
-- Metrics and logs under `evaluation/`
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./Agents/agent.py:app"
+  },
+  "env": ".env"
+}
+```
 
 ---
 
-## 4. Tools
+## 3. Project Structure
 
-Agents access functionality through a set of tools implemented as Python modules under `src/quant_agent/tools/`.
-
-The twelve tools are:
-
-1. `paper_search_tool`
-2. `paper_metadata_tool`
-3. `paper_quality_filter_tool`
-4. `pdf_embedding_tool`
-5. `cot_dataset_tool`
-6. `research_memory_tool`
-7. `signal_backtest_tool`
-8. `factor_library_tool`
-9. `performance_report_tool`
-10. `risk_report_tool`
-11. `agent_finetuning_tool`
-12. `agent_evaluation_tool`
-
-Each tool exposes a narrow, well-defined interface and can be wired into your agent framework of choice.
+```
+Autonomous-Quantitative-Investment-Research/
+├── langgraph.json              # LangGraph orchestration config
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment variables template
+│
+├── Agents/                     # Core agent system
+│   ├── agent.py                # Main LangGraph workflow (8 agents)
+│   ├── nodes.py                # LangGraph state & nodes (model/paper selection)
+│   ├── prompts.py              # System prompts for each agent
+│   ├── config.py               # GCS, logging, LLM endpoint config
+│   ├── llm_config.py           # LLM initialization & routing
+│   ├── gcs_utils.py            # Google Cloud Storage integration
+│   ├── react_single_tool.py    # Sequential ReAct for LLaMA 3 compatibility
+│   ├── utils/
+│   │   └── tools.py            # Quantitative finance tools
+│   └── data_dicts/             # Sharadar data dictionaries
+│       ├── DAILY.data_dict.md  # Daily OHLCV + technical fields
+│       ├── SF1.data_dict.md    # Company fundamentals
+│       └── SEP.data_dict.md    # S&P 500 constituents
+│
+├── Sandbox/                    # Code execution sandbox
+│   ├── sandbox_executor.py     # Isolated Python execution (venv + LLM iteration)
+│   └── test_sandbox*.py        # Sandbox tests
+│
+├── notebooks/                  # Development notebooks
+│   ├── Process_pipeline.ipynb
+│   └── campbell/               # Research pipeline notebooks
+│       ├── Embedding_CoT_Instruction_Pipeline.ipynb
+│       ├── Embedding_PDF.ipynb
+│       ├── Paper_Quality_Filter.ipynb
+│       └── Grid_Search_Hyper_Parameter.ipynb
+│
+├── endpoints/                  # Lambda/vLLM deployment
+│   ├── setup_lambda_all.sh     # Full Lambda setup script
+│   ├── setup_lambda_lora.sh    # LoRA-specific setup
+│   └── ssh setup.txt           # SSH connection guide
+│
+├── docker/                     # Docker configuration
+│   └── Dockerfile              # vLLM + MinerU GPU container
+│
+├── miner_process.py            # MinerU PDF extraction pipeline
+└── vllm_lora_deployment_guide.md
+```
 
 ---
 
-## 5. Evaluation and Metrics
+## 4. Core Components
 
-The project tracks both research quality and operational efficiency.
+### Agents (`Agents/`)
 
-Research quality:
+The main agent system implementing the paper replication pipeline:
 
-- Strength of empirical design and out-of-sample testing
-- Statistical properties of signals
-- Documentation and reproducibility
-- Breadth and novelty of explored ideas
+| File | Purpose |
+|------|---------|
+| `agent.py` | LangGraph workflow with 8 specialized agents |
+| `nodes.py` | State management, model selection, paper selection nodes |
+| `prompts.py` | System prompts defining each agent's behavior |
+| `llm_config.py` | LLM routing (OpenAI vs vLLM/LoRA endpoints) |
+| `gcs_utils.py` | GCS authentication and paper download |
+| `react_single_tool.py` | Sequential tool execution for LLaMA 3 |
 
-Operational efficiency:
+### Tools (`Agents/utils/tools.py`)
 
-- Idea velocity and validated hypotheses per period
-- Effective researcher-equivalent throughput
-- Cost of tuning and running agents
+Quantitative finance tools available to agents:
 
-An AI-as-a-judge layer scores agent outputs and filters which traces are added back into the training corpus.
+| Tool | Description |
+|------|-------------|
+| `decile_sorter` | Cross-sectional quantile ranking |
+| `zscore_normalizer` | Z-score standardization per date |
+| `industry_neutralizer` | Remove industry effects via regression |
+| `cross_sectional_backtester` | Equal-weighted decile portfolio returns |
+| `fama_macbeth_ols` | Two-step Fama-MacBeth regression |
+| `robust_tstat_calc` | Newey-West t-statistics |
+| `event_study_engine` | Event-time return analysis |
+| `term_structure_analyzer` | AR(1) half-life estimation |
+| `search_research_themes` | Vector similarity search (Qdrant) |
+
+### Sandbox (`Sandbox/`)
+
+Isolated code execution environment:
+- Creates fresh Python venv per execution
+- Auto-installs dependencies from generated code
+- Iterates on errors with LLM feedback
+- Subprocess-based (no Docker required)
+
+---
+
+## 5. Configuration
+
+### Environment Variables (`.env`)
+
+```bash
+# LLM
+OPENAI_API_KEY=sk-...
+LAMBDA_ENDPOINT=http://<ip>:8000/v1
+LAMBDA_API_KEY=token-abc123
+BASE_MODEL_NAME=/models/llama-3.1-8b
+FINLLAMA_MODEL_NAME=/models/finllama
+
+# GCS
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+GCS_BUCKET_NAME=investment-research
+
+# Tracing (optional)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=ls__...
+```
+
+### LLM Routing
+
+The system supports multiple LLM backends:
+
+| Model Choice | Backend | Description |
+|--------------|---------|-------------|
+| `openai` | OpenAI API | GPT-4o-mini (default) |
+| `base` | vLLM (Lambda) | Llama 3.1 8B Instruct |
+| `finllama` | vLLM (Lambda) | Fino1-8B (financial reasoning) |
+| `custom` | vLLM (Lambda) | Your LoRA fine-tuned adapter |
+
+### GCS Integration
+
+Papers are stored in Google Cloud Storage:
+- **Bucket**: `investment-research`
+- **Path**: `processed/<paper_name>/<paper>.md`
+- **Auth**: Service account JSON or `gcloud auth login`
 
 ---
 
 ## 6. Getting Started
 
-### 6.1 Prerequisites
+### Prerequisites
 
-- Python 3.10 or higher
-- GPU with CUDA support recommended
-- Access to LLaMA weights
-- Access to any external APIs you plan to use (for example, backtesting or evaluation APIs)
+- Python 3.10+
+- GPU with CUDA (for local vLLM, optional)
+- OpenAI API key or vLLM endpoint
+- GCS credentials (for paper access)
 
-### 6.2 Setup
+### Setup
 
 ```bash
-git clone git@github.com:<your-org>/agentic-quant-research.git
-cd agentic-quant-research
+git clone https://github.com/sami-naeem/Autonomous-Quantitative-Investment-Research.git
+cd Autonomous-Quantitative-Investment-Research
+
 python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your credentials
 ```
 
+### Running the Agent
 
--------------------------------------------------------------------------------------
+**Option 1: Direct execution**
+```bash
+python -m Agents.agent
+```
 
-# Work in Progress Details
+**Option 2: LangGraph CLI**
+```bash
+langgraph dev
+# Opens interactive UI at http://localhost:8000
+```
 
-#### Phase 1: Data Mining 
+---
 
-    # Download research papers - Seb
-        1 - tested local - DONE
-        2 - upload to GCS - Done
-    # Extract with MinerU - Seb
-        1- Test Mineru Locally using vLLM and two other services. - DONE 
-        2- uploaded via Gradio UI - DONE
-        3- setup pipeline to use mineru and upload to GCS - done
-    # Data PRocess in GCS - Sami
-        pipeline to convert processed papers into a cleaner folder structure 
-    # paper quality control- filter bad or poor quality papers -  Campbell/Ale - DONE
-    # Tokenize extracted text to embeddings for RAG. - Campbell
+## 7. Deployment (Lambda + vLLM)
 
-#### Phase 2: LLM/Agent Preparation
+### Quick Start
 
-    #  baseline finllamn - alejandro - DONE
-        prepare top 5 papers -> citations index
-        prepare handcraft for fine tuning
-    # conferences lookup- ale DONE
-    # outline llama agents for agentic arch, MM POC - Alejandro DONE
-    # RAG pipeline - Campbell - DONE
-    # Llama Endpoints Serving - Sebastian - DONE
-    # outline entire arch - Team - DONE
-#### Phase 3: FineTune LLM (Jan-Feb)
-    # convert mm poc into working langgraph agents - Sami + Sebastian 
-    # Finetuning llama and hyper param tuning - campbell
-    # integrate rag int agentic flow - 
-    # MM POC of Eval flow - Ale
-#### Phase 4: Evaluation Pipeline (Feb-Mar)
+1. **Upload setup script to Lambda instance:**
+   ```bash
+   scp -i "$KEY" endpoints/setup_lambda_all.sh ubuntu@$IP:~/setup.sh
+   ```
 
-    # eval paper - alejandro
+2. **Run setup (installs vLLM, downloads models, pulls data):**
+   ```bash
+   ssh -i "$KEY" ubuntu@$IP "sed -i 's/\r$//' ~/setup.sh && bash ~/setup.sh"
+   ```
 
+3. **Start vLLM server:**
+   ```bash
+   # Base Llama 3.1 8B
+   ~/scripts/start_vllm_base.sh
 
+   # Fino1-8B (finllama)
+   ~/scripts/start_vllm_finllama.sh
 
+   # Custom LoRA adapter
+   ~/scripts/start_vllm_custom.sh
+   ```
+
+4. **Test endpoint:**
+   ```bash
+   curl http://localhost:8000/v1/models -H 'Authorization: Bearer token-abc123'
+   ```
+
+### Available Models After Setup
+
+| Script | Model | API Name |
+|--------|-------|----------|
+| `start_vllm_base.sh` | Llama 3.1 8B Instruct | `/models/llama-3.1-8b` |
+| `start_vllm_finllama.sh` | Fino1-8B | `/models/finllama` |
+| `start_vllm_custom.sh` | Base + LoRA | `custom` |
+
+---
+
+## 8. Work in Progress
+
+### Phase 1: Data Mining (DONE)
+- [x] Download research papers from arXiv
+- [x] Extract with MinerU
+- [x] Upload to GCS
+- [x] Paper quality filter
+
+### Phase 2: LLM/Agent Preparation (DONE)
+- [x] Baseline FinLLaMA fine-tuning
+- [x] RAG pipeline
+- [x] vLLM endpoint serving
+- [x] Agent architecture design
+
+### Phase 3: Fine-Tuning (Jan-Feb)
+- [x] Convert POC to LangGraph agents
+- [ ] Hyperparameter tuning
+- [ ] Integrate RAG into agentic flow
+
+### Phase 4: Evaluation (Feb-Mar)
+- [ ] AI-as-judge evaluation pipeline
+- [ ] Quality metrics and reporting
+
+---
+
+## 9. Technical Stack
+
+| Layer | Technology |
+|-------|------------|
+| Orchestration | LangGraph 1.0+ |
+| LLM Framework | LangChain + LangChain-OpenAI |
+| LLMs | GPT-4o-mini, Llama 3.1 8B, Fino1-8B |
+| Inference | vLLM (Lambda Labs GPU) |
+| Storage | Google Cloud Storage |
+| Vector DB | Qdrant + Sentence-Transformers |
+| Quant Tools | pandas, numpy, scipy, statsmodels |
+| PDF Processing | MinerU |
+| Tracing | LangSmith (optional) |
+
+---
+
+## License
+
+This project is part of the UChicago MSADS Capstone program.
