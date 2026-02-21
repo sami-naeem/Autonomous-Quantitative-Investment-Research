@@ -24,6 +24,11 @@ def _last_value(existing: str, new: str) -> str:
     return new if new else existing
 
 
+def _last_bool(existing: bool, new: bool) -> bool:
+    """Reducer that always takes the latest boolean value."""
+    return new
+
+
 class AgentState(TypedDict):
     """State schema for the agent workflow"""
     messages: Annotated[List[BaseMessage], add_messages]
@@ -38,6 +43,9 @@ class AgentState(TypedDict):
     theme_pick: Annotated[dict, _last_value]
     factor_extract: Annotated[dict, _last_value]
     output_gcs_uri: Annotated[str, _last_value]
+    # Endpoint validation result — set by validate_endpoint_node
+    endpoint_valid: Annotated[bool, _last_bool]
+    endpoint_error: Annotated[str, _last_value]
 
 
 def select_model_node(state: AgentState) -> AgentState:
@@ -45,26 +53,43 @@ def select_model_node(state: AgentState) -> AgentState:
     First node: prompt user to select which LLM to use for the workflow.
 
     Uses interrupt() to pause and wait for user input in LangGraph Studio.
+    Re-interrupts when routed back from a failed endpoint validation so the
+    user can pick a different model.
 
     Args:
         state: Current agent state
 
     Returns:
-        Updated state with model_choice
+        Updated state with model_choice and cleared endpoint_error
     """
-    # Check if model was already provided in initial state
     model_choice = state.get("model_choice", "")
+    endpoint_valid = state.get("endpoint_valid", False)
+    endpoint_error = state.get("endpoint_error", "")
 
-    if model_choice and model_choice in MODEL_OPTIONS:
+    # endpoint_valid defaults to False in the TypedDict before any validation runs.
+    # An actual validation failure always sets endpoint_error to a non-empty string.
+    # So: False + no error = not yet validated (treat as OK to bypass interrupt).
+    #     False + error    = validation explicitly failed (prompt user).
+    endpoint_failed = not endpoint_valid and bool(endpoint_error)
+
+    # Skip interrupt if a valid model was pre-selected and validation hasn't failed
+    if model_choice and model_choice in MODEL_OPTIONS and not endpoint_failed:
         logger.info(f"Using pre-selected model: {model_choice}")
         return {"model_choice": model_choice}
+
+    if endpoint_failed:
+        logger.warning(
+            f"Endpoint validation failed for '{model_choice}': {endpoint_error}. "
+            "Prompting model re-selection."
+        )
 
     # Interrupt and wait for user input
     selection = interrupt(
         {
             "question": "Select the LLM to use for this workflow:",
             "options": MODEL_OPTIONS,
-            "default": "openai"
+            "default": "openai",
+            **({"error": endpoint_error} if endpoint_error else {}),
         }
     )
 
@@ -74,7 +99,8 @@ def select_model_node(state: AgentState) -> AgentState:
         selection = "openai"
 
     logger.info(f"User selected model: {selection}")
-    return {"model_choice": selection}
+    # Optimistically reset endpoint_valid so the next validation starts clean
+    return {"model_choice": selection, "endpoint_valid": True}
 
 
 def select_paper_node(state: AgentState) -> AgentState:

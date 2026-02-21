@@ -18,6 +18,7 @@ credentials.json
 /Agents/utils/__pycache__
 /tools/__pycache__
 /__pycache__
+/results
 
 # Dev container
 .devcontainer/
@@ -37,3 +38,4 @@ endpoints/setup_lambda.sh
 endpoints/setup_lambda.sh
 comprehensive evaluation.md
 .claude/settings.local.json
+results/ref_Abarbanell_and_Bushee_1998.json

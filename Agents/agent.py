@@ -20,7 +20,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 
-from Agents.config import LoggingConfig, LLMConfig
+from Agents.config import LoggingConfig, LLMConfig, BM25Config
 from Agents.nodes import AgentState, select_model_node, select_paper_node
 from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_client, upload_agent_output
 from Agents.config import GCSConfig
@@ -37,19 +37,109 @@ logging.basicConfig(
 )
 logger = logging.getLogger(LoggingConfig.LOGGER_NAME)
 
-MAX_SNIPPET_CHARS = 600
+MAX_SNIPPET_CHARS = 900      # raised from 600 to fit academic paragraphs
 MAX_SNIPPETS_PER_CALL = 5
 
 _PAPER_TEXT: ContextVar[str] = ContextVar("_PAPER_TEXT", default="")
 _SHARADAR_DD: ContextVar[Dict[str, Dict[str, str]]] = ContextVar("_SHARADAR_DD", default={})
 
+# BM25 retrieval — populated at paper-load time, queried by the tool
+_PAPER_CHUNKS: ContextVar[List[str]] = ContextVar("_PAPER_CHUNKS", default=[])
+_PAPER_BM25: ContextVar[Any] = ContextVar("_PAPER_BM25", default=None)
+
+BM25_SCORE_THRESHOLD = BM25Config.SCORE_THRESHOLD   # set via BM25_SCORE_THRESHOLD env var
+BM25_TOP_K = BM25Config.TOP_K                       # set via BM25_TOP_K env var
+
+try:
+    from rank_bm25 import BM25Okapi
+    _BM25_AVAILABLE = True
+except ImportError:
+    _BM25_AVAILABLE = False
+    logger.warning("rank-bm25 not installed — BM25 retrieval unavailable. Run: pip install rank-bm25")
+
+
+# ---------------------------------------------------------------------
+# Paper chunking & BM25 index helpers
+# ---------------------------------------------------------------------
+def _chunk_academic_markdown(text: str) -> List[str]:
+    """Split paper markdown into paragraph-level chunks for BM25 indexing.
+
+    Preprocessing steps:
+    - Replace display math ($$...$$) and inline math ($...$) with [EQ] placeholders
+      to prevent LaTeX tokens from polluting BM25 term frequencies.
+    - Attach short markdown headers (# ... ####) to the paragraph that follows them
+      so section context is preserved in the chunk.
+    - Drop fragments shorter than 80 chars (figure captions, lone page numbers, etc.).
+    """
+    # Display equations first (can be multiline)
+    text = re.sub(r'\$\$.*?\$\$', '[EQ]', text, flags=re.DOTALL)
+    # Inline math — limit width to avoid eating across paragraphs
+    text = re.sub(r'\$[^$\n]{1,120}\$', '[EQ]', text)
+
+    raw_chunks = re.split(r'\n{2,}', text)
+    chunks: List[str] = []
+    header_buffer = ""
+
+    for raw in raw_chunks:
+        chunk = raw.strip()
+        if not chunk:
+            continue
+        # Short markdown headers → buffer and attach to next paragraph
+        if re.match(r'^#{1,4}\s', chunk) and len(chunk) < 120:
+            header_buffer = chunk + "\n"
+            continue
+        full = header_buffer + chunk
+        header_buffer = ""
+        if len(full) > 80:
+            chunks.append(full)
+
+    return chunks
+
+
+def _build_paper_index(paper_text: str) -> None:
+    """Build a BM25 index from the paper text and cache it in ContextVars.
+
+    Called once per paper in agent2_extract_factor_node immediately after
+    _PAPER_TEXT is set. Subsequent get_matching_content calls query the
+    cached index without re-indexing.
+    """
+    if not _BM25_AVAILABLE:
+        logger.error("[BM25] rank-bm25 not installed — index not built.")
+        return
+
+    chunks = _chunk_academic_markdown(paper_text)
+    if not chunks:
+        logger.warning("[BM25] No chunks extracted from paper text.")
+        _PAPER_CHUNKS.set([])
+        _PAPER_BM25.set(None)
+        return
+
+    tokenized = [c.lower().split() for c in chunks]
+    index = BM25Okapi(tokenized)
+
+    _PAPER_CHUNKS.set(chunks)
+    _PAPER_BM25.set(index)
+
+    avg_chars = sum(len(c) for c in chunks) / len(chunks)
+    logger.info(
+        f"[BM25] Index built: {len(chunks)} chunks | avg {avg_chars:.0f} chars/chunk"
+    )
+    # Log first 3 chunks so callers can verify chunking quality
+    for i, chunk in enumerate(chunks[:3]):
+        preview = chunk[:300].replace('\n', '↵')
+        logger.info(f"[BM25] Chunk[{i}]: {preview!r}")
+
 
 # ---------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------
-@tool
-def get_matching_content(key: str, max_matches: int = 10, window_lines: int = 2) -> List[str]:
-    """Return snippets from the current paper text containing `key` (case-insensitive)."""
+def _get_matching_content_legacy(key: str, max_matches: int = 10, window_lines: int = 2) -> List[str]:
+    """(Legacy v1 — exact substring search over paper lines. Kept for comparison.)
+
+    Original implementation: scans each line for an exact case-insensitive
+    substring match and returns a ±window_lines context window around each hit.
+    Replaced by the BM25-backed get_matching_content tool.
+    """
     paper_text = _PAPER_TEXT.get() or ""
     if not paper_text:
         return []
@@ -67,6 +157,72 @@ def get_matching_content(key: str, max_matches: int = 10, window_lines: int = 2)
         if len(hits) >= max_matches:
             break
     return hits
+
+
+@tool
+def get_matching_content(query: str) -> List[str]:
+    """Search the paper for passages relevant to a short keyword query.
+
+    Use short, specific terms (1-3 words) — e.g. "book-to-market", "portfolio sort",
+    "holding period", "lagged return", "regression coefficient".
+    Avoid full sentences: the paper may phrase concepts differently from your query.
+    Each call costs from your limited tool budget; use a distinct query per call.
+
+    Returns up to 4 text passages (matched paragraphs + neighboring context).
+    Returns a not-found message if no relevant passage exists — try a different keyword.
+    """
+    chunks = _PAPER_CHUNKS.get()
+    bm25 = _PAPER_BM25.get()
+
+    if not chunks or bm25 is None:
+        if not _BM25_AVAILABLE:
+            return ["rank-bm25 not installed. Cannot search paper."]
+        return ["Paper index not available — index may not have been built yet."]
+
+    query_l = query.lower().strip()
+    if not query_l:
+        return ["Empty query — provide a 1-3 word keyword."]
+
+    scores = bm25.get_scores(query_l.split())
+    ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+
+    # Always log top-5 so we can see what BM25 thinks is relevant
+    top5 = [(i, round(float(scores[i]), 3), chunks[i][:80].replace('\n', ' '))
+            for i in ranked[:5]]
+    logger.info(f"[BM25] query={query!r} | top-5 scores: {top5}")
+
+    best_score = float(scores[ranked[0]]) if ranked else 0.0
+    if best_score < BM25_SCORE_THRESHOLD:
+        logger.info(
+            f"[BM25] No strong match (best={best_score:.3f} < threshold={BM25_SCORE_THRESHOLD}). "
+            f"Returning not-found for query={query!r}"
+        )
+        return [
+            f"No relevant content found for '{query}' (best score={best_score:.2f}). "
+            f"Try a shorter or different keyword."
+        ]
+
+    results: List[str] = []
+    used: set = set()
+
+    for idx in ranked[:BM25_TOP_K]:
+        score = float(scores[idx])
+        if score < BM25_SCORE_THRESHOLD or idx in used:
+            break
+
+        logger.info(
+            f"[BM25] Returning chunk[{idx}] score={score:.3f}:\n{chunks[idx]}"
+        )
+        results.append(f"[MATCH score={score:.2f}]\n{chunks[idx]}")
+        used.add(idx)
+
+        # Add the following paragraph as context — papers elaborate forward
+        next_idx = idx + 1
+        if next_idx < len(chunks) and next_idx not in used:
+            results.append(f"[CONTEXT]\n{chunks[next_idx]}")
+            used.add(next_idx)
+
+    return results if results else [f"No relevant content found for '{query}'."]
 
 
 @tool
@@ -515,7 +671,7 @@ def validate_endpoint_node(state: AgentState) -> AgentState:
 
     if model_choice == "openai":
         logger.info("Using OpenAI — skipping endpoint validation.")
-        return {}
+        return {"endpoint_valid": True, "endpoint_error": ""}
 
     llm = get_llm_by_name(model_choice)
     model_name = getattr(llm, "model_name", "unknown")
@@ -533,13 +689,17 @@ def validate_endpoint_node(state: AgentState) -> AgentState:
         resp.raise_for_status()
         available = [m["id"] for m in resp.json().get("data", [])]
     except Exception as e:
-        raise ConnectionError(f"Cannot reach vLLM at {models_url}: {e}")
+        error_msg = f"Cannot reach vLLM at {models_url}: {e}"
+        logger.error(f"[validate_endpoint] {error_msg}")
+        return {"endpoint_valid": False, "endpoint_error": error_msg}
 
     if model_name not in available:
-        raise ValueError(f"Model '{model_name}' not found on vLLM. Available: {available}")
+        error_msg = f"Model '{model_name}' not served by vLLM. Available: {available}"
+        logger.error(f"[validate_endpoint] {error_msg}")
+        return {"endpoint_valid": False, "endpoint_error": error_msg}
 
     logger.info(f"Endpoint OK — '{model_name}' is available.")
-    return {}
+    return {"endpoint_valid": True, "endpoint_error": ""}
 
 
 # ---------------------------------------------------------------------
@@ -606,6 +766,7 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
     """Agent 2: extract factor purpose and computation logic."""
     paper_text = state.get("paper_text", "")
     _PAPER_TEXT.set(paper_text)
+    _build_paper_index(paper_text)   # build BM25 index once before the ReAct loop
 
     model_choice = state.get("model_choice", "openai")
     llm = get_llm_by_name(model_choice)
@@ -672,8 +833,17 @@ def save_output_to_gcs_node(state: AgentState) -> AgentState:
 # ---------------------------------------------------------------------
 # Graph routing
 # ---------------------------------------------------------------------
-def _paper_already_loaded(state: AgentState) -> str:
-    """Route: skip paper loading if text is already provided."""
+# Graph routing
+# ---------------------------------------------------------------------
+def _route_after_validation(state: AgentState) -> str:
+    """Route after validate_endpoint_node.
+
+    - Validation failed  → back to select_model (user picks a different model)
+    - Validation passed + paper text in state → skip GCS load, go straight to triage
+    - Validation passed + no paper text      → fetch paper from GCS first
+    """
+    if not state.get("endpoint_valid", True):
+        return "retry"
     if (state.get("paper_text") or "").strip():
         return "already_loaded"
     return "needs_loading"
@@ -695,12 +865,16 @@ def build_graph() -> StateGraph:
 
     graph.set_entry_point("select_model")
 
+    # select_model always proceeds to validation
     graph.add_edge("select_model", "validate_endpoint")
 
+    # After validation: loop back to select_model on failure,
+    # or continue to paper loading / triage on success
     graph.add_conditional_edges(
-        "select_model",
-        _paper_already_loaded,
+        "validate_endpoint",
+        _route_after_validation,
         {
+            "retry": "select_model",
             "already_loaded": "triage_paper",
             "needs_loading": "select_paper",
         },
