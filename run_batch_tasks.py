@@ -14,6 +14,8 @@ from Agents.config import GCSConfig
 
 logger = logging.getLogger(__name__)
 
+RESULTS_BUCKET = GCSConfig.SOURCE_BUCKET_NAME
+RESULTS_PREFIX = "pipeline_results_finllama/"
 LOCAL_RESULTS = Path("results/")
 LOCAL_RESULTS.mkdir(exist_ok=True)
 
@@ -39,7 +41,6 @@ def list_papers() -> list[str]:
             paper_names.add(parts[0])
 
     return sorted(list(paper_names))
-
 
 def download_paper_text(paper_name: str) -> str:
     """Download the .md file(s) for a given paper folder."""
@@ -82,6 +83,11 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "finllama
         "output_gcs_uri": final_state.get("output_gcs_uri", ""),
     }
 
+def save_result_gcs(paper_name: str, result: dict):
+    client = get_gcs_client()
+    bucket = client.bucket(RESULTS_BUCKET)
+    blob = bucket.blob(f"{RESULTS_PREFIX}{paper_name}.json")
+    blob.upload_from_string(json.dumps(result, indent=2), content_type="application/json")
 
 def run_all(model_choice: str = "base"):
     papers = list_papers()
@@ -96,6 +102,7 @@ def run_all(model_choice: str = "base"):
             result = run_pipeline(paper_name, text, model_choice)
             all_results.append(result)
 
+            save_result_gcs(paper_name, result)
             (LOCAL_RESULTS / f"{paper_name}.json").write_text(json.dumps(result, indent=2))
 
         except Exception as e:
