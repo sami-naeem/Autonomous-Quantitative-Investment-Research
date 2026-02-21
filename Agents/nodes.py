@@ -33,6 +33,10 @@ class AgentState(TypedDict):
     signals: Annotated[list, operator.add]
     analysis: Annotated[str, _last_value]
     model_used: Annotated[str, _last_value]
+    # New keys for simplified pipeline
+    abstract: Annotated[str, _last_value]
+    theme_pick: Annotated[dict, _last_value]
+    factor_extract: Annotated[dict, _last_value]
 
 
 def select_model_node(state: AgentState) -> AgentState:

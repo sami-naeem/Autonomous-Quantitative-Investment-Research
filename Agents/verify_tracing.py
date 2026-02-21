@@ -25,7 +25,7 @@ print(f"OPENAI_API_KEY: {'SET' if os.getenv('OPENAI_API_KEY') else 'NOT SET'}")
 print("=" * 80)
 
 from langchain_core.messages import HumanMessage
-from Agents.agent import app
+from Agents.agent_old import app
 
 print("\nRunning a simple test with tracing enabled...")
 print("=" * 80)
