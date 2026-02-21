@@ -3,10 +3,12 @@ Batch runner: iterate over all papers in GCS and run the agent pipeline.
 Run from project root: python run_batch_tasks.py
 """
 
+import argparse
 import json
 import logging
 from pathlib import Path
 from google.cloud import storage
+from sympy import python
 
 from Agents.agent import app
 from Agents.config import GCSConfig
@@ -109,4 +111,22 @@ def run_all(model_choice: str = "base"):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    results = run_all(model_choice="base")
+
+    parser = argparse.ArgumentParser(description="Batch paper pipeline runner")
+    parser.add_argument(
+        "--model",
+        choices=["openai", "base", "finllama", "custom"],
+        default="base",
+        help="LLM to use for the pipeline (default: base)",
+    )
+    args = parser.parse_args()
+
+    results = run_all(model_choice=args.model)
+
+
+# Example usage:
+#    python run_batch_tasks.py --model custom # pyright: ignore[reportUndefinedVariable]
+#    python run_batch_tasks.py --model openai
+#   python run_batch_tasks.py --model finllama # type: ignore
+#   python run_batch_tasks.py --model base   # default, same as plain: python run_batch_tasks.py
+#   python run_batch_tasks.py --help         # shows all options
