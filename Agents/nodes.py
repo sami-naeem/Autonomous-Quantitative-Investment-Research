@@ -3,7 +3,8 @@ LangGraph workflow nodes for the agent pipeline.
 Each node represents a step in the paper analysis workflow.
 """
 import logging
-from typing import TypedDict, List, Annotated, Literal
+import random
+from typing import TypedDict, List, Annotated, Literal, Optional
 import operator
 
 from langchain_core.messages import BaseMessage
@@ -29,6 +30,11 @@ def _last_bool(existing: bool, new: bool) -> bool:
     return new
 
 
+def _last_optional(existing, new):
+    """Reducer for optional fields — keeps new value only when it is not None."""
+    return new if new is not None else existing
+
+
 class AgentState(TypedDict):
     """State schema for the agent workflow"""
     messages: Annotated[List[BaseMessage], add_messages]
@@ -46,6 +52,8 @@ class AgentState(TypedDict):
     # Endpoint validation result — set by validate_endpoint_node
     endpoint_valid: Annotated[bool, _last_bool]
     endpoint_error: Annotated[str, _last_value]
+    # Optional seed for reproducible paper selection across coordinated runs
+    random_seed: Annotated[Optional[int], _last_optional]
 
 
 def select_model_node(state: AgentState) -> AgentState:
@@ -131,10 +139,11 @@ def select_paper_node(state: AgentState) -> AgentState:
         available_papers = list_available_papers(storage_client)
         logger.info(f"Found {len(available_papers)} available papers")
 
-        # Select the first available paper by default
+        # Randomly select from available papers (seeded if provided)
         if available_papers:
-            paper_name = available_papers[0]
-            logger.info(f"Auto-selected paper: {paper_name}")
+            seed = state.get("random_seed")
+            paper_name = random.Random(seed).choice(available_papers)
+            logger.info(f"Selected paper (seed={seed}): {paper_name}")
         else:
             return {
                 **state,

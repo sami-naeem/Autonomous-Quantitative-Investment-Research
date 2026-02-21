@@ -841,8 +841,9 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
 def save_output_to_gcs_node(state: AgentState) -> AgentState:
     """Save final agent outputs to the GCS output bucket as JSON."""
     paper_name = state.get("paper_name", "unknown")
+    model_choice = state.get("model_choice", "unknown")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    blob_name = f"{paper_name}/{timestamp}.json"
+    blob_name = f"{paper_name}/{model_choice}/{timestamp}.json"
 
     payload = {
         "paper_name": paper_name,
