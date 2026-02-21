@@ -79,7 +79,7 @@ def get_llm_by_name(model_name: str):
         >>> response = signal_llm.invoke("Extract signals from...")
     """
     model_map = {
-        "finllama": finllama_llm,
+        "/models/finllama": finllama_llm,
         "custom": custom_llm,
         "base": base_llm,
         "openai": llm,
