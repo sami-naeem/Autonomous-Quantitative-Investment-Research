@@ -638,7 +638,42 @@ def _run_react_json_agent(
             pass
 
         try:
-            return _extract_json(content)
+            parsed = _extract_json(content)
+
+            # Detect text-embedded tool calls: finllama and some vLLM models output tool
+            # calls as JSON in the message body instead of the structured tool_calls field.
+            # Example: {"name": "get_matching_content", "parameters": {"query": "..."}}
+            # If we returned this as the final result it would land in factor_extract as-is.
+            if isinstance(parsed, dict) and tools_available:
+                tc_name = parsed.get("name")
+                tc_params = parsed.get("parameters") or parsed.get("args") or parsed.get("arguments")
+                if tc_name in tool_map and tc_params is not None:
+                    logger.info(
+                        f"Round {round_num + 1}: Text-embedded tool call detected for '{tc_name}'. Executing."
+                    )
+                    total_tool_calls += 1
+                    tc_params_coerced = _coerce_tool_args(tc_params) if isinstance(tc_params, dict) else {}
+                    try:
+                        tool_result = tool_map[tc_name].invoke(tc_params_coerced)
+                    except Exception as e:
+                        logger.warning(f"Tool '{tc_name}' raised {type(e).__name__}: {e}")
+                        tool_result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
+                    messages.append(
+                        HumanMessage(
+                            content=(
+                                f"Tool result for '{tc_name}':\n"
+                                + sanitize_tool_result(tool_result, tc_name)
+                            )
+                        )
+                    )
+                    if total_tool_calls >= max_total_tool_calls:
+                        logger.warning(
+                            f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
+                            "Next round will force final JSON (tools disabled)."
+                        )
+                    continue
+
+            return parsed
         except ValueError:
             if not json_retry_used:
                 json_retry_used = True
