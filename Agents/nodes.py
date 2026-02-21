@@ -16,8 +16,7 @@ from Agents.llm_config import get_llm_by_name
 logger = logging.getLogger("agent-pipeline")
 
 # Valid model choices
-MODEL_OPTIONS = ["openai", "finllama", "base", "custom"]
-
+MODEL_OPTIONS = ["openai", "/models/finllama", "base", "custom"]
 
 def _last_value(existing: str, new: str) -> str:
     """Reducer that keeps the latest non-empty value (last-write-wins)."""
