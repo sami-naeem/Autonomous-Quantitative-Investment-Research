@@ -7,17 +7,17 @@
 #   have CRLF line endings (\r\n) which cause SILENT FAILURES on Linux.
 #   The sed command below strips them — do NOT skip it.
 #
-# DOCKER GROUP:
+#VERY IMPORTANT DOCKER GROUP:
 #   On a fresh Lambda instance, your user may not have docker access.
 #   The setup script handles this automatically, and the generated
 #   startup scripts (~/scripts/start_vllm_*.sh) also include a
 #   docker group check. If you still get "permission denied" errors,
-#   run:  sudo usermod -aG docker $USER && newgrp docker
+#   RUN THIS:  sudo usermod -aG docker $USER && newgrp docker
 #
 # ============================================
 #  OPTION A: Terminal (2 commands) CONFIGURATION - Update IP each time you boot
 # ============================================
-IP=209.20.159.74
+IP=150.136.164.105
 
 # Key paths - modify paths for ssh key path
 KEY_TOWER="S:\Data Science\Autonomous-Quantitative-Investment-Research\sebas.pem"
@@ -41,7 +41,10 @@ ssh -i "$KEY_LAPTOP" ubuntu@$IP "sed -i 's/\r$//' ~/setup_lambda_all.sh && bash 
 # 1. Open Lambda's Jupyter UI in browser
 # 2. Drag & drop setup_lambda_all.sh into home folder
 # 3. Open a Terminal tab in Jupyter
-# (IMPORTANT) 4. Run:
+# (IMPORTANT) 
+# 4. Run DOCKER GROUP
+sudo usermod -aG docker $USER && newgrp docker
+# 5. SCRIPT CLEAN AND CALL
 sed -i 's/\r$//' ~/setup_lambda_all.sh && bash ~/setup_lambda_all.sh
 
 # ============================================

@@ -139,6 +139,22 @@ echo "[5/13] Pulling vLLM Docker image: ${VLLM_IMAGE}..."
 docker pull ${VLLM_IMAGE}
 docker inspect ${VLLM_IMAGE} > /dev/null 2>&1 && echo "Docker image ready." || { echo "ERROR: Failed to pull Docker image"; exit 1; }
 
+# --- Step 5b: Patch partial-json-parser inside vLLM image ---
+# Fixes: JSONDecodeError: Unterminated string in llama_tool_parser.py
+# Cause: partial-json-parser <= 0.2.x crashes on `{"` (2-char streaming buffer).
+# Fix:   Build a thin wrapper image with partial-json-parser >= 0.3.1 installed.
+#        VLLM_IMAGE is updated so all generated startup scripts use the patched image.
+echo ""
+echo "[5b/13] Patching partial-json-parser in vLLM image..."
+PATCHED_IMAGE="vllm-patched:latest"
+docker build -t "${PATCHED_IMAGE}" - << DOCKERFILE_EOF
+FROM ${VLLM_IMAGE}
+RUN pip install "partial-json-parser>=0.3.1" --quiet --no-cache-dir
+DOCKERFILE_EOF
+VLLM_IMAGE="${PATCHED_IMAGE}"
+echo "  Patched image built: ${VLLM_IMAGE}"
+echo "  All startup scripts will use this image."
+
 # --- Step 6: HuggingFace login + model downloads ---
 echo ""
 echo "[6/13] Logging into HuggingFace..."

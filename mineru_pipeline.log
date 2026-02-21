@@ -18793,3 +18793,244 @@
 ============================================================
 2025-11-11 05:56:31,906 - mineru-pipeline - INFO - PIPELINE COMPLETE: 0/2 papers successfully processed
 2025-11-11 05:56:31,906 - mineru-pipeline - INFO - ============================================================
+2026-01-26 19:31:24,817 - mineru-pipeline - INFO - Starting MinerU GCS Pipeline (individual http-client processing)
+2026-01-26 19:31:26,700 - mineru-pipeline - INFO - MinerU version: mineru, version 2.6.4
+2026-01-26 19:31:26,710 - mineru-pipeline - INFO - vLLM server is running at http://localhost:30000
+2026-01-26 19:31:28,316 - mineru-pipeline - INFO - GCS authentication successful
+2026-01-26 19:31:28,325 - mineru-pipeline - INFO - Found 2985 already processed papers
+2026-01-26 19:31:28,326 - mineru-pipeline - INFO - Listing PDFs in raw_papers/jkp_papers/
+2026-01-26 19:31:28,626 - mineru-pipeline - INFO - Found 75 total PDFs, 2985 already processed
+2026-01-26 19:31:28,626 - mineru-pipeline - INFO - Found 75 new papers to process
+2026-01-26 19:31:28,626 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 19:31:28,627 - mineru-pipeline - INFO - DOWNLOAD BATCH 1: Papers 1-20 of 75
+2026-01-26 19:31:28,627 - mineru-pipeline - INFO - ============================================================
+2026-01-26 19:31:28,627 - mineru-pipeline - INFO - Downloading 20 PDF files...
+2026-01-26 19:31:31,472 - mineru-pipeline - INFO - Processing 20 papers with vLLM server...
+2026-01-26 19:31:31,472 - mineru-pipeline - INFO - Processing 20 papers individually with background uploads every 4 papers...
+2026-01-26 19:32:55,081 - mineru-pipeline - INFO - Accruals_cowc_gr1a_Richardson_2005: ✓ 53 files (83.40s)
+2026-01-26 19:32:56,917 - mineru-pipeline - WARNING - Accruals_oaccruals_ni_Hafzalla_2011: output directory not created (1.82s)
+2026-01-26 19:34:12,985 - mineru-pipeline - INFO - Accruals_seas_16_20na_Heston_2008: ✓ 45 files (75.88s)
+2026-01-26 19:36:43,105 - mineru-pipeline - INFO - Starting MinerU GCS Pipeline (individual http-client processing)
+2026-01-26 19:36:44,892 - mineru-pipeline - INFO - MinerU version: mineru, version 2.6.4
+2026-01-26 19:36:44,899 - mineru-pipeline - INFO - vLLM server is running at http://localhost:30000
+2026-01-26 19:36:45,694 - mineru-pipeline - INFO - GCS authentication successful
+2026-01-26 19:36:45,736 - mineru-pipeline - INFO - Found 2985 already processed papers
+2026-01-26 19:36:45,736 - mineru-pipeline - INFO - Listing PDFs in raw_papers/all_jkp_papers_final//
+2026-01-26 19:36:45,841 - mineru-pipeline - INFO - Found 0 total PDFs, 2985 already processed
+2026-01-26 19:36:45,842 - mineru-pipeline - INFO - Found 0 new papers to process
+2026-01-26 19:36:45,842 - mineru-pipeline - INFO - No new papers to process
+2026-01-26 19:37:42,615 - mineru-pipeline - INFO - Starting MinerU GCS Pipeline (individual http-client processing)
+2026-01-26 19:37:44,458 - mineru-pipeline - INFO - MinerU version: mineru, version 2.6.4
+2026-01-26 19:37:44,470 - mineru-pipeline - INFO - vLLM server is running at http://localhost:30000
+2026-01-26 19:37:45,132 - mineru-pipeline - INFO - GCS authentication successful
+2026-01-26 19:37:45,146 - mineru-pipeline - INFO - Found 2985 already processed papers
+2026-01-26 19:37:45,150 - mineru-pipeline - INFO - Listing PDFs in raw_papers/all_jkp_papers_final//
+2026-01-26 19:37:45,264 - mineru-pipeline - INFO - Found 0 total PDFs, 2985 already processed
+2026-01-26 19:37:45,264 - mineru-pipeline - INFO - Found 0 new papers to process
+2026-01-26 19:37:45,265 - mineru-pipeline - INFO - No new papers to process
+2026-01-26 19:37:52,544 - mineru-pipeline - INFO - Starting MinerU GCS Pipeline (individual http-client processing)
+2026-01-26 19:37:54,361 - mineru-pipeline - INFO - MinerU version: mineru, version 2.6.4
+2026-01-26 19:37:54,368 - mineru-pipeline - INFO - vLLM server is running at http://localhost:30000
+2026-01-26 19:37:55,030 - mineru-pipeline - INFO - GCS authentication successful
+2026-01-26 19:37:55,034 - mineru-pipeline - INFO - Found 2985 already processed papers
+2026-01-26 19:37:55,034 - mineru-pipeline - INFO - Listing PDFs in raw_papers/all_jkp_papers_final/
+2026-01-26 19:37:55,330 - mineru-pipeline - INFO - Found 66 total PDFs, 2985 already processed
+2026-01-26 19:37:55,330 - mineru-pipeline - INFO - Found 66 new papers to process
+2026-01-26 19:37:55,331 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 19:37:55,331 - mineru-pipeline - INFO - DOWNLOAD BATCH 1: Papers 1-20 of 66
+2026-01-26 19:37:55,331 - mineru-pipeline - INFO - ============================================================
+2026-01-26 19:37:55,331 - mineru-pipeline - INFO - Downloading 20 PDF files...
+2026-01-26 19:37:57,674 - mineru-pipeline - INFO - Processing 20 papers with vLLM server...
+2026-01-26 19:37:57,674 - mineru-pipeline - INFO - Processing 20 papers individually with background uploads every 4 papers...
+2026-01-26 19:38:36,754 - mineru-pipeline - INFO - Starting MinerU GCS Pipeline (individual http-client processing)
+2026-01-26 19:38:38,526 - mineru-pipeline - INFO - MinerU version: mineru, version 2.6.4
+2026-01-26 19:38:38,536 - mineru-pipeline - INFO - vLLM server is running at http://localhost:30000
+2026-01-26 19:38:39,163 - mineru-pipeline - INFO - GCS authentication successful
+2026-01-26 19:38:39,166 - mineru-pipeline - INFO - Found 2966 already processed papers
+2026-01-26 19:38:39,166 - mineru-pipeline - INFO - Listing PDFs in raw_papers/all_jkp_papers_final/
+2026-01-26 19:38:39,388 - mineru-pipeline - INFO - Found 66 total PDFs, 2966 already processed
+2026-01-26 19:38:39,396 - mineru-pipeline - INFO - Found 66 new papers to process
+2026-01-26 19:38:39,397 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 19:38:39,397 - mineru-pipeline - INFO - DOWNLOAD BATCH 1: Papers 1-20 of 66
+2026-01-26 19:38:39,397 - mineru-pipeline - INFO - ============================================================
+2026-01-26 19:38:39,398 - mineru-pipeline - INFO - Downloading 20 PDF files...
+2026-01-26 19:38:43,656 - mineru-pipeline - INFO - Processing 20 papers with vLLM server...
+2026-01-26 19:38:43,657 - mineru-pipeline - INFO - Processing 20 papers individually with background uploads every 4 papers...
+2026-01-26 19:39:04,901 - mineru-pipeline - INFO - ref_Abarbanell_and_Bushee_1998: ✓ 24 files (21.08s)
+2026-01-26 19:39:36,274 - mineru-pipeline - INFO - ref_Amihud_2002: ✓ 38 files (31.24s)
+2026-01-26 19:40:21,739 - mineru-pipeline - INFO - ref_Anderson_and_GarciaFeijoo_2006: ✓ 24 files (45.28s)
+2026-01-26 19:41:03,631 - mineru-pipeline - INFO - ref_Balakrishnan_Bartov_and_Faurel_2010: ✓ 26 files (41.70s)
+2026-01-26 19:41:03,631 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:41:19,409 - mineru-pipeline - INFO - Background upload complete: 112 files (4 papers)
+2026-01-26 19:41:33,729 - mineru-pipeline - INFO - ref_Ball_et_al_2016: ✓ 25 files (29.99s)
+2026-01-26 19:41:58,550 - mineru-pipeline - INFO - ref_Banz_1981: ✓ 21 files (24.70s)
+2026-01-26 19:42:11,403 - mineru-pipeline - INFO - ref_Barbee_Jr_Mukherji_and_Raines_1996: ✓ 12 files (12.73s)
+2026-01-26 19:42:47,366 - mineru-pipeline - INFO - ref_Barth_Elliott_and_Finn_1999: ✓ 30 files (35.71s)
+2026-01-26 19:42:47,367 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 19:42:47,368 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 19:42:47,368 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:43:01,802 - mineru-pipeline - INFO - Background upload complete: 88 files (4 papers)
+2026-01-26 19:43:28,815 - mineru-pipeline - INFO - ref_Basu_1983: ✓ 24 files (41.32s)
+2026-01-26 19:44:37,943 - mineru-pipeline - INFO - ref_Belo_Lin_and_Bazdresch_2014: ✓ 56 files (68.90s)
+2026-01-26 19:45:42,839 - mineru-pipeline - INFO - ref_Belo_and_Lin_2012: ✓ 49 files (64.65s)
+2026-01-26 19:46:09,772 - mineru-pipeline - INFO - ref_Bhandari_1988: ✓ 19 files (26.86s)
+2026-01-26 19:46:09,772 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 19:46:09,772 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 19:46:09,773 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:46:30,833 - mineru-pipeline - INFO - Background upload complete: 148 files (4 papers)
+2026-01-26 19:47:16,900 - mineru-pipeline - INFO - ref_Blitz_et_al_2011: ✓ 23 files (66.95s)
+2026-01-26 19:48:10,274 - mineru-pipeline - INFO - ref_Bouchaud_et_al_2019: ✓ 67 files (52.93s)
+2026-01-26 19:49:03,868 - mineru-pipeline - INFO - ref_Boudoukh_et_al_2007: ✓ 37 files (53.46s)
+2026-01-26 19:50:12,505 - mineru-pipeline - INFO - ref_Bradshaw_et_al_2006: ✓ 38 files (68.49s)
+2026-01-26 19:50:12,505 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 19:50:12,506 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 19:50:12,507 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:50:35,130 - mineru-pipeline - INFO - Background upload complete: 165 files (4 papers)
+2026-01-26 19:50:45,763 - mineru-pipeline - INFO - ref_Brennan_Chordia_and_Subrahmanyam_1998: ✓ 29 files (33.08s)
+2026-01-26 19:51:57,842 - mineru-pipeline - INFO - ref_C_S_Asness_et_al_2019: ✓ 62 files (71.67s)
+2026-01-26 19:52:52,562 - mineru-pipeline - INFO - ref_Chan_et_al_2001: ✓ 29 files (54.65s)
+2026-01-26 19:53:25,199 - mineru-pipeline - INFO - ref_Chordia_et_al_2001: ✓ 27 files (32.52s)
+2026-01-26 19:53:25,200 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 19:53:25,200 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 19:53:25,201 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:53:25,201 - mineru-pipeline - INFO - Waiting for final upload to complete...
+2026-01-26 19:53:48,586 - mineru-pipeline - INFO - Background upload complete: 147 files (4 papers)
+2026-01-26 19:53:48,894 - mineru-pipeline - INFO - Final upload complete
+2026-01-26 19:53:48,895 - mineru-pipeline - INFO - All processing and uploads complete
+2026-01-26 19:53:48,895 - mineru-pipeline - INFO - Batch complete: 20/20 papers processed
+2026-01-26 19:53:48,896 - mineru-pipeline - INFO - Cleaning up downloaded PDFs from this batch...
+2026-01-26 19:53:49,017 - mineru-pipeline - INFO - Batch cleanup complete
+2026-01-26 19:53:49,018 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 19:53:49,018 - mineru-pipeline - INFO - DOWNLOAD BATCH 2: Papers 21-40 of 66
+2026-01-26 19:53:49,018 - mineru-pipeline - INFO - ============================================================
+2026-01-26 19:53:49,018 - mineru-pipeline - INFO - Downloading 20 PDF files...
+2026-01-26 19:53:52,786 - mineru-pipeline - INFO - Processing 20 papers with vLLM server...
+2026-01-26 19:53:52,787 - mineru-pipeline - INFO - Processing 20 papers individually with background uploads every 4 papers...
+2026-01-26 19:55:00,551 - mineru-pipeline - INFO - ref_Cooper_Gulen_and_Schill_2008: ✓ 33 files (67.63s)
+2026-01-26 19:55:54,223 - mineru-pipeline - INFO - ref_Corwin_and_Schultz_2012: ✓ 49 files (53.24s)
+2026-01-26 19:57:06,404 - mineru-pipeline - INFO - ref_Daniel_and_Titman_2006: ✓ 71 files (71.89s)
+2026-01-26 19:57:26,086 - mineru-pipeline - INFO - ref_De_Bondt_and_Thaler_1985: ✓ 15 files (19.65s)
+2026-01-26 19:57:26,087 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 19:57:51,351 - mineru-pipeline - INFO - Background upload complete: 168 files (4 papers)
+2026-01-26 19:58:16,561 - mineru-pipeline - INFO - ref_Dechow_Sloan_and_Soliman_2004: ✓ 40 files (50.20s)
+2026-01-26 19:58:59,596 - mineru-pipeline - INFO - ref_Desai_Rajgopal_and_Venkatachalam_2004: ✓ 38 files (42.67s)
+2026-01-26 19:59:23,535 - mineru-pipeline - INFO - ref_Dichev_1998: ✓ 14 files (23.78s)
+2026-01-26 19:59:50,408 - mineru-pipeline - INFO - ref_Fairfield_Whisenant_and_Yohn_2003: ✓ 36 files (26.76s)
+2026-01-26 19:59:50,408 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 19:59:50,408 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 19:59:50,408 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:00:11,912 - mineru-pipeline - INFO - Background upload complete: 128 files (4 papers)
+2026-01-26 20:00:38,065 - mineru-pipeline - INFO - ref_Fama_and_French_1992: ✓ 28 files (47.61s)
+2026-01-26 20:01:24,219 - mineru-pipeline - INFO - ref_Fama_and_French_2015: ✓ 29 files (45.96s)
+2026-01-26 20:02:07,759 - mineru-pipeline - INFO - ref_Foster_Olsen_and_Shevlin_1984: ✓ 50 files (43.30s)
+2026-01-26 20:03:09,254 - mineru-pipeline - INFO - ref_Francis_et_al_2004: ✓ 38 files (61.33s)
+2026-01-26 20:03:09,255 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:03:09,255 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:03:09,256 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:03:40,277 - mineru-pipeline - INFO - Background upload complete: 145 files (4 papers)
+2026-01-26 20:03:51,006 - mineru-pipeline - INFO - ref_Frankel_and_Lee_1998: ✓ 37 files (41.57s)
+2026-01-26 20:04:27,529 - mineru-pipeline - INFO - ref_George_and_Hwang_2004: ✓ 26 files (36.47s)
+2026-01-26 20:05:21,027 - mineru-pipeline - INFO - ref_Hahn_and_Lee_2009: ✓ 44 files (53.42s)
+2026-01-26 20:06:05,268 - mineru-pipeline - INFO - ref_Harvey_and_Siddique_2000: ✓ 42 files (44.10s)
+2026-01-26 20:06:05,268 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:06:05,268 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:06:05,268 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:06:20,134 - mineru-pipeline - INFO - Background upload complete: 149 files (4 papers)
+2026-01-26 20:06:48,910 - mineru-pipeline - INFO - ref_Haugen_and_Baker_1996: ✓ 26 files (43.22s)
+2026-01-26 20:08:03,418 - mineru-pipeline - INFO - ref_Heston_and_Sadka_2008: ✓ 45 files (74.39s)
+2026-01-26 20:08:48,665 - mineru-pipeline - INFO - ref_Hirshleifer_et_al_2004: ✓ 31 files (45.04s)
+2026-01-26 20:10:56,045 - mineru-pipeline - INFO - ref_Hou_Xue_and_Zhang_2015: ✓ 58 files (127.01s)
+2026-01-26 20:10:56,046 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:10:56,047 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:10:56,048 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:10:56,048 - mineru-pipeline - INFO - Waiting for final upload to complete...
+2026-01-26 20:11:27,935 - mineru-pipeline - INFO - Background upload complete: 160 files (4 papers)
+2026-01-26 20:11:28,296 - mineru-pipeline - INFO - Final upload complete
+2026-01-26 20:11:28,296 - mineru-pipeline - INFO - All processing and uploads complete
+2026-01-26 20:11:28,296 - mineru-pipeline - INFO - Batch complete: 20/20 papers processed
+2026-01-26 20:11:28,296 - mineru-pipeline - INFO - Cleaning up downloaded PDFs from this batch...
+2026-01-26 20:11:28,317 - mineru-pipeline - INFO - Batch cleanup complete
+2026-01-26 20:11:28,318 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 20:11:28,318 - mineru-pipeline - INFO - DOWNLOAD BATCH 3: Papers 41-60 of 66
+2026-01-26 20:11:28,318 - mineru-pipeline - INFO - ============================================================
+2026-01-26 20:11:28,318 - mineru-pipeline - INFO - Downloading 20 PDF files...
+2026-01-26 20:11:31,951 - mineru-pipeline - INFO - Processing 20 papers with vLLM server...
+2026-01-26 20:11:31,954 - mineru-pipeline - INFO - Processing 20 papers individually with background uploads every 4 papers...
+2026-01-26 20:12:20,347 - mineru-pipeline - INFO - ref_J_K_Thomas_and_Zhang_2002: ✓ 20 files (48.30s)
+2026-01-26 20:13:20,142 - mineru-pipeline - INFO - ref_J_Thomas_and_Zhang_2011: ✓ 19 files (59.56s)
+2026-01-26 20:14:10,816 - mineru-pipeline - INFO - ref_Jegadeesh_and_Livnat_2006: ✓ 51 files (50.26s)
+2026-01-26 20:14:47,228 - mineru-pipeline - INFO - ref_Jegadeesh_and_Titman_1993: ✓ 32 files (36.33s)
+2026-01-26 20:14:47,228 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:15:05,907 - mineru-pipeline - INFO - Background upload complete: 122 files (4 papers)
+2026-01-26 20:15:37,063 - mineru-pipeline - INFO - ref_Jiang_Lee_and_Zhang_2005: ✓ 29 files (49.65s)
+2026-01-26 20:16:39,549 - mineru-pipeline - INFO - ref_Lakonishok_et_al_1994: ✓ 38 files (62.22s)
+2026-01-26 20:17:09,879 - mineru-pipeline - INFO - ref_Lamont_Polk_and_SaaaRequejo_2001: ✓ 18 files (30.25s)
+2026-01-26 20:18:20,236 - mineru-pipeline - INFO - ref_Lev_and_Nissim_2004: ✓ 45 files (70.01s)
+2026-01-26 20:18:20,237 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:18:20,237 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:18:20,237 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:18:37,169 - mineru-pipeline - INFO - Background upload complete: 130 files (4 papers)
+2026-01-26 20:18:59,493 - mineru-pipeline - INFO - ref_Li_2011: ✓ 34 files (39.15s)
+2026-01-26 20:19:37,828 - mineru-pipeline - INFO - ref_Litzenberger_and_Ramaswamy_1979: ✓ 129 files (37.15s)
+2026-01-26 20:20:33,627 - mineru-pipeline - INFO - ref_Lyandres_et_al_2008: ✓ 37 files (55.60s)
+2026-01-26 20:21:01,666 - mineru-pipeline - INFO - ref_Miller_and_Scholes_1982: ✓ 23 files (27.63s)
+2026-01-26 20:21:01,667 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:21:01,667 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:21:01,668 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:21:36,669 - mineru-pipeline - INFO - Background upload complete: 223 files (4 papers)
+2026-01-26 20:21:42,727 - mineru-pipeline - INFO - ref_NovyMarx_2011: ✓ 71 files (40.66s)
+2026-01-26 20:22:31,129 - mineru-pipeline - INFO - ref_NovyMarx_2012: ✓ 46 files (48.19s)
+2026-01-26 20:23:55,536 - mineru-pipeline - INFO - ref_NovyMarx_2013: ✓ 41 files (84.22s)
+2026-01-26 20:24:37,939 - mineru-pipeline - INFO - ref_OrtizMolina_and_Phillips_2014: ✓ 27 files (42.26s)
+2026-01-26 20:24:37,940 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:24:37,940 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:24:37,940 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:24:58,374 - mineru-pipeline - INFO - Background upload complete: 185 files (4 papers)
+2026-01-26 20:25:24,428 - mineru-pipeline - INFO - ref_Palazzo_2012: ✓ 67 files (46.17s)
+2026-01-26 20:26:40,424 - mineru-pipeline - INFO - ref_Penman_et_al_2007: ✓ 42 files (75.79s)
+2026-01-26 20:27:31,068 - mineru-pipeline - INFO - ref_Piotroski_2000: ✓ 26 files (50.54s)
+2026-01-26 20:28:04,657 - mineru-pipeline - INFO - ref_Pontiff_and_Woodgate_2008: ✓ 35 files (33.38s)
+2026-01-26 20:28:04,657 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:28:04,658 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:28:04,658 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:28:04,659 - mineru-pipeline - INFO - Waiting for final upload to complete...
+2026-01-26 20:28:28,684 - mineru-pipeline - INFO - Background upload complete: 170 files (4 papers)
+2026-01-26 20:28:28,917 - mineru-pipeline - INFO - Final upload complete
+2026-01-26 20:28:28,917 - mineru-pipeline - INFO - All processing and uploads complete
+2026-01-26 20:28:28,917 - mineru-pipeline - INFO - Batch complete: 20/20 papers processed
+2026-01-26 20:28:28,918 - mineru-pipeline - INFO - Cleaning up downloaded PDFs from this batch...
+2026-01-26 20:28:28,955 - mineru-pipeline - INFO - Batch cleanup complete
+2026-01-26 20:28:28,955 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 20:28:28,955 - mineru-pipeline - INFO - DOWNLOAD BATCH 4: Papers 61-66 of 66
+2026-01-26 20:28:28,956 - mineru-pipeline - INFO - ============================================================
+2026-01-26 20:28:28,956 - mineru-pipeline - INFO - Downloading 6 PDF files...
+2026-01-26 20:28:29,893 - mineru-pipeline - INFO - Processing 6 papers with vLLM server...
+2026-01-26 20:28:29,893 - mineru-pipeline - INFO - Processing 6 papers individually with background uploads every 4 papers...
+2026-01-26 20:29:50,843 - mineru-pipeline - INFO - ref_Richardson_Sloan_Soliman_and_Tuna_2005: ✓ 53 files (80.56s)
+2026-01-26 20:30:29,872 - mineru-pipeline - INFO - ref_Sloan_1996: ✓ 46 files (38.85s)
+2026-01-26 20:31:34,959 - mineru-pipeline - INFO - ref_Soliman_2008: ✓ 40 files (64.91s)
+2026-01-26 20:32:58,114 - mineru-pipeline - INFO - ref_Stambaugh_and_Yuan_2017: ✓ 64 files (82.68s)
+2026-01-26 20:32:58,114 - mineru-pipeline - INFO - Starting background upload of 4 papers...
+2026-01-26 20:33:24,967 - mineru-pipeline - INFO - Background upload complete: 203 files (4 papers)
+2026-01-26 20:33:52,424 - mineru-pipeline - INFO - ref_Titman_Wei_and_Xie_2004: ✓ 31 files (54.16s)
+2026-01-26 20:34:17,701 - mineru-pipeline - INFO - ref_Xie_2001: ✓ 24 files (25.17s)
+2026-01-26 20:34:17,701 - mineru-pipeline - INFO - Waiting for previous upload to complete...
+2026-01-26 20:34:17,701 - mineru-pipeline - INFO - Previous upload finished
+2026-01-26 20:34:17,702 - mineru-pipeline - INFO - Starting background upload of 2 papers...
+2026-01-26 20:34:17,702 - mineru-pipeline - INFO - Waiting for final upload to complete...
+2026-01-26 20:34:30,097 - mineru-pipeline - INFO - Background upload complete: 55 files (2 papers)
+2026-01-26 20:34:30,196 - mineru-pipeline - INFO - Final upload complete
+2026-01-26 20:34:30,196 - mineru-pipeline - INFO - All processing and uploads complete
+2026-01-26 20:34:30,197 - mineru-pipeline - INFO - Batch complete: 6/6 papers processed
+2026-01-26 20:34:30,197 - mineru-pipeline - INFO - Cleaning up downloaded PDFs from this batch...
+2026-01-26 20:34:30,210 - mineru-pipeline - INFO - Batch cleanup complete
+2026-01-26 20:34:30,210 - mineru-pipeline - INFO - 
+============================================================
+2026-01-26 20:34:30,210 - mineru-pipeline - INFO - PIPELINE COMPLETE: 66/66 papers successfully processed
+2026-01-26 20:34:30,211 - mineru-pipeline - INFO - ============================================================
