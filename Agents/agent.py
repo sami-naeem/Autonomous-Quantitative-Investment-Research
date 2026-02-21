@@ -12,6 +12,7 @@ import logging
 import re
 import httpx
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from langgraph.graph import StateGraph, END
@@ -21,7 +22,7 @@ from langchain_core.tools import tool
 
 from Agents.config import LoggingConfig, LLMConfig
 from Agents.nodes import AgentState, select_model_node, select_paper_node
-from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_client
+from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_client, upload_agent_output
 from Agents.config import GCSConfig
 from Agents.llm_config import get_llm_by_name
 from Agents.prompts import (
@@ -641,6 +642,33 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
     return {**state, "factor_extract": factor_extract}
 
 
+def save_output_to_gcs_node(state: AgentState) -> AgentState:
+    """Save final agent outputs to the GCS output bucket as JSON."""
+    paper_name = state.get("paper_name", "unknown")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    blob_name = f"{paper_name}/{timestamp}.json"
+
+    payload = {
+        "paper_name": paper_name,
+        "model_choice": state.get("model_choice", ""),
+        "theme_pick": state.get("theme_pick", {}),
+        "factor_extract": state.get("factor_extract", {}),
+    }
+
+    storage_client = get_storage_client()
+    if storage_client is None:
+        logger.warning("save_output_to_gcs: no GCS client available, skipping upload.")
+        return {}
+
+    try:
+        uri = upload_agent_output(storage_client, blob_name, payload)
+        logger.info(f"Agent output saved to {uri}")
+        return {"output_gcs_uri": uri}
+    except Exception as e:
+        logger.warning(f"save_output_to_gcs: upload failed ({e}), continuing.")
+        return {}
+
+
 # ---------------------------------------------------------------------
 # Graph routing
 # ---------------------------------------------------------------------
@@ -663,6 +691,7 @@ def build_graph() -> StateGraph:
     graph.add_node("load_paper_markdown", load_paper_markdown_from_gcs_node)
     graph.add_node("triage_paper", triage_paper_node)
     graph.add_node("agent2_extract_factor", agent2_extract_factor_node)
+    graph.add_node("save_output_to_gcs", save_output_to_gcs_node)
 
     graph.set_entry_point("select_model")
 
@@ -680,7 +709,8 @@ def build_graph() -> StateGraph:
     graph.add_edge("select_paper", "load_paper_markdown")
     graph.add_edge("load_paper_markdown", "triage_paper")
     graph.add_edge("triage_paper", "agent2_extract_factor")
-    graph.add_edge("agent2_extract_factor", END)
+    graph.add_edge("agent2_extract_factor", "save_output_to_gcs")
+    graph.add_edge("save_output_to_gcs", END)
 
     return graph.compile()
 
@@ -729,6 +759,7 @@ def main():
     print(f"\nModel Used: {result.get('model_choice', 'N/A')}")
     print(f"\nTheme: {json.dumps(result.get('theme_pick', {}), indent=2)}")
     print(f"\nFactor Extract: {json.dumps(result.get('factor_extract', {}), indent=2)}")
+    print(f"\nOutput saved to: {result.get('output_gcs_uri', 'N/A')}")
 
 
 if __name__ == "__main__":

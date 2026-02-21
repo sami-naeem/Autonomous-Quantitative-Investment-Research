@@ -6,8 +6,9 @@ This version is SAFE for service accounts without
 `storage.buckets.list` permission.
 """
 
+import json
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from google.cloud import storage
 
 from Agents.config import GCSConfig
@@ -86,6 +87,35 @@ def list_available_papers(storage_client: storage.Client) -> List[str]:
 
     except Exception:
         return []
+
+
+def upload_agent_output(
+    storage_client: storage.Client,
+    blob_name: str,
+    data: Dict[str, Any],
+    bucket_name: Optional[str] = None,
+) -> str:
+    """
+    Serialize `data` as JSON and upload it to the output GCS bucket.
+
+    Args:
+        storage_client: Authenticated GCS client.
+        blob_name: Destination path inside the bucket, e.g. ``<paper_name>/<timestamp>.json``.
+        data: JSON-serializable dict to upload.
+        bucket_name: Override bucket; defaults to ``GCSConfig.OUTPUT_BUCKET_NAME``.
+
+    Returns:
+        The full GCS URI of the uploaded object (``gs://bucket/blob``).
+
+    Raises:
+        Exception: Re-raised as-is so callers can decide whether to fail hard or warn.
+    """
+    target_bucket = bucket_name or GCSConfig.OUTPUT_BUCKET_NAME
+    bucket = storage_client.bucket(target_bucket)
+    blob = bucket.blob(blob_name)
+    payload = json.dumps(data, indent=2, default=str, ensure_ascii=False)
+    blob.upload_from_string(payload, content_type="application/json")
+    return f"gs://{target_bucket}/{blob_name}"
 
 
 def download_paper_text(

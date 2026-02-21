@@ -13,8 +13,6 @@ from Agents.config import GCSConfig
 
 logger = logging.getLogger(__name__)
 
-RESULTS_BUCKET = GCSConfig.SOURCE_BUCKET_NAME
-RESULTS_PREFIX = "jkp_task_12_pipeline_results/"
 LOCAL_RESULTS = Path("results/")
 LOCAL_RESULTS.mkdir(exist_ok=True)
 
@@ -74,20 +72,14 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -
     logger.info(f"Final state keys: {list(final_state.keys())}")
     logger.info(f"theme_pick type: {type(final_state.get('theme_pick'))}, value: {final_state.get('theme_pick')}")
     logger.info(f"factor_extract type: {type(final_state.get('factor_extract'))}, value: {final_state.get('factor_extract')}")
-    
+
     return {
         "paper_id": paper_name,
         "model_choice": model_choice,
         "theme_pick": json.dumps(final_state.get("theme_pick", {}), indent=2),
         "factor_extract": json.dumps(final_state.get("factor_extract", {}), indent=2),
+        "output_gcs_uri": final_state.get("output_gcs_uri", ""),
     }
-
-
-def save_result_gcs(paper_name: str, result: dict):
-    client = get_gcs_client()
-    bucket = client.bucket(RESULTS_BUCKET)
-    blob = bucket.blob(f"{RESULTS_PREFIX}{paper_name}.json")
-    blob.upload_from_string(json.dumps(result, indent=2), content_type="application/json")
 
 
 def run_all(model_choice: str = "base"):
@@ -103,7 +95,6 @@ def run_all(model_choice: str = "base"):
             result = run_pipeline(paper_name, text, model_choice)
             all_results.append(result)
 
-            save_result_gcs(paper_name, result)
             (LOCAL_RESULTS / f"{paper_name}.json").write_text(json.dumps(result, indent=2))
 
         except Exception as e:
