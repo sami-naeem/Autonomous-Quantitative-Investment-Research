@@ -37,6 +37,7 @@ class AgentState(TypedDict):
     abstract: Annotated[str, _last_value]
     theme_pick: Annotated[dict, _last_value]
     factor_extract: Annotated[dict, _last_value]
+    output_gcs_uri: Annotated[str, _last_value]
 
 
 def select_model_node(state: AgentState) -> AgentState:

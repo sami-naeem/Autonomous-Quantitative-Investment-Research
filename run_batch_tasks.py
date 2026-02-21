@@ -3,6 +3,7 @@ Batch runner: iterate over all papers in GCS and run the agent pipeline.
 Run from project root: python run_batch_tasks.py
 """
 
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -13,9 +14,7 @@ from Agents.config import GCSConfig
 
 logger = logging.getLogger(__name__)
 
-RESULTS_BUCKET = GCSConfig.SOURCE_BUCKET_NAME
-RESULTS_PREFIX = "jkp_task_12_pipeline_results_finllama/"
-LOCAL_RESULTS = Path("results_finllama/")
+LOCAL_RESULTS = Path("results/")
 LOCAL_RESULTS.mkdir(exist_ok=True)
 
 
@@ -74,23 +73,17 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "finllama
     logger.info(f"Final state keys: {list(final_state.keys())}")
     logger.info(f"theme_pick type: {type(final_state.get('theme_pick'))}, value: {final_state.get('theme_pick')}")
     logger.info(f"factor_extract type: {type(final_state.get('factor_extract'))}, value: {final_state.get('factor_extract')}")
-    
+
     return {
         "paper_id": paper_name,
         "model_choice": model_choice,
         "theme_pick": json.dumps(final_state.get("theme_pick", {}), indent=2),
         "factor_extract": json.dumps(final_state.get("factor_extract", {}), indent=2),
+        "output_gcs_uri": final_state.get("output_gcs_uri", ""),
     }
 
 
-def save_result_gcs(paper_name: str, result: dict):
-    client = get_gcs_client()
-    bucket = client.bucket(RESULTS_BUCKET)
-    blob = bucket.blob(f"{RESULTS_PREFIX}{paper_name}.json")
-    blob.upload_from_string(json.dumps(result, indent=2), content_type="application/json")
-
-
-def run_all(model_choice: str = "finllama"):
+def run_all(model_choice: str = "base"):
     papers = list_papers()
     logger.info(f"Found {len(papers)} papers")
 
@@ -103,7 +96,6 @@ def run_all(model_choice: str = "finllama"):
             result = run_pipeline(paper_name, text, model_choice)
             all_results.append(result)
 
-            save_result_gcs(paper_name, result)
             (LOCAL_RESULTS / f"{paper_name}.json").write_text(json.dumps(result, indent=2))
 
         except Exception as e:
@@ -118,4 +110,22 @@ def run_all(model_choice: str = "finllama"):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    results = run_all(model_choice="/models/finllama")
+
+    parser = argparse.ArgumentParser(description="Batch paper pipeline runner")
+    parser.add_argument(
+        "--model",
+        choices=["openai", "base", "finllama", "custom"],
+        default="base",
+        help="LLM to use for the pipeline (default: base)",
+    )
+    args = parser.parse_args()
+
+    results = run_all(model_choice=args.model)
+
+
+# Example usage:
+#    python run_batch_tasks.py --model custom # pyright: ignore[reportUndefinedVariable]
+#    python run_batch_tasks.py --model openai
+#   python run_batch_tasks.py --model finllama # type: ignore
+#   python run_batch_tasks.py --model base   # default, same as plain: python run_batch_tasks.py
+#   python run_batch_tasks.py --help         # shows all options

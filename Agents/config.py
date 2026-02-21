@@ -19,6 +19,7 @@ class GCSConfig:
     PROJECT_ID = "agentic-investment-research"
     SOURCE_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "investment-research").strip()
     SOURCE_PREFIX = "all_jkp_papers_final_processed/"  # Where processed papers with markdown are stored
+    OUTPUT_BUCKET_NAME = os.getenv("GCS_OUTPUT_BUCKET_NAME", "investment-research-output").strip()
     LOCAL_TEMP_DIR = Path("./temp_papers")
     CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     # Fallback for Lambda/server environment

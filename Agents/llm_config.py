@@ -28,6 +28,7 @@ def get_base_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.BASE_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        streaming=False,
     )
 
 
@@ -38,6 +39,7 @@ def get_finllama_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.FINLLAMA_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        streaming=False,
     )
 
 
@@ -48,6 +50,7 @@ def get_custom_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.CUSTOM_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        streaming=False,
     )
 
 
