@@ -42,7 +42,7 @@ class LLMConfig:
 
     BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3.1-8b')}"
     # LoRA adapters are registered by name only (no path prefix) in vLLM
-    FINLLAMA_MODEL = os.getenv('FINLLAMA_MODEL_NAME', 'finllama')
+    FINLLAMA_MODEL = os.getenv('FINLLAMA_MODEL_NAME', 'models/finllama')
     CUSTOM_MODEL = os.getenv('CUSTOM_MODEL_NAME', 'custom')
 
     # Model temperature
