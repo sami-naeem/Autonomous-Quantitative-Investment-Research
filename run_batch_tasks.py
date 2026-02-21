@@ -114,7 +114,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch paper pipeline runner")
     parser.add_argument(
         "--model",
-        choices=["openai", "base", "finllama", "custom"],
+        choices=["openai", "base", "/models/finllama", "custom"],
         default="base",
         help="LLM to use for the pipeline (default: base)",
     )
@@ -126,6 +126,6 @@ if __name__ == "__main__":
 # Example usage:
 #    python run_batch_tasks.py --model custom # pyright: ignore[reportUndefinedVariable]
 #    python run_batch_tasks.py --model openai
-#   python run_batch_tasks.py --model finllama # type: ignore
+#   python run_batch_tasks.py --model /models/finllama # type: ignore
 #   python run_batch_tasks.py --model base   # default, same as plain: python run_batch_tasks.py
 #   python run_batch_tasks.py --help         # shows all options
