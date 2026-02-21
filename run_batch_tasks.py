@@ -14,8 +14,8 @@ from Agents.config import GCSConfig
 logger = logging.getLogger(__name__)
 
 RESULTS_BUCKET = GCSConfig.SOURCE_BUCKET_NAME
-RESULTS_PREFIX = "jkp_task_12_pipeline_results/"
-LOCAL_RESULTS = Path("results/")
+RESULTS_PREFIX = "jkp_task_12_pipeline_results_finllama/"
+LOCAL_RESULTS = Path("results_finllama/")
 LOCAL_RESULTS.mkdir(exist_ok=True)
 
 
@@ -57,7 +57,7 @@ def download_paper_text(paper_name: str) -> str:
     return "\n\n".join(texts)
 
 
-def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -> dict:
+def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "finllama") -> dict:
     initial_state = {
         "messages": [],
         "model_choice": model_choice,
@@ -90,7 +90,7 @@ def save_result_gcs(paper_name: str, result: dict):
     blob.upload_from_string(json.dumps(result, indent=2), content_type="application/json")
 
 
-def run_all(model_choice: str = "base"):
+def run_all(model_choice: str = "finllama"):
     papers = list_papers()
     logger.info(f"Found {len(papers)} papers")
 
@@ -118,4 +118,4 @@ def run_all(model_choice: str = "base"):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    results = run_all(model_choice="base")
+    results = run_all(model_choice="/models/finllama")

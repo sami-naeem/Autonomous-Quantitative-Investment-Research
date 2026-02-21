@@ -283,12 +283,13 @@ _REPAIR_PROMPT_FROM_CONTEXT = (
 
 
 def _force_json(llm, broken_text: str, messages: List[BaseMessage] = None) -> dict:
+    capped_llm = llm.bind(max_tokens=1024)
     if messages:
         try:
             repair_messages = list(messages) + [
                 HumanMessage(content=_REPAIR_PROMPT_FROM_CONTEXT)
             ]
-            resp = llm.invoke(repair_messages)
+            resp = capped_llm.invoke(repair_messages)
             return _extract_json(getattr(resp, "content", "") or "")
         except (ValueError, Exception) as e:
             logger.warning(f"Context-based JSON repair failed: {e}")
@@ -296,7 +297,7 @@ def _force_json(llm, broken_text: str, messages: List[BaseMessage] = None) -> di
     if broken_text and broken_text.strip():
         try:
             truncated = broken_text[:3000]
-            resp = llm.invoke(_REPAIR_PROMPT_WITH_TEXT.format(text=truncated))
+            resp = capped_llm.invoke(_REPAIR_PROMPT_WITH_TEXT.format(text=truncated))
             return _extract_json(getattr(resp, "content", "") or "")
         except (ValueError, Exception) as e:
             logger.warning(f"Text-based JSON repair also failed: {e}")
@@ -369,8 +370,11 @@ def _run_react_json_agent(
     max_rounds: int = 8,
     max_tool_calls_per_round: int = 3,
     max_total_tool_calls: int = 8,
+    max_tokens_tool_round: int = 512,
+    max_tokens_final: int = 1024,
 ) -> Dict[str, Any]:
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = llm.bind_tools(tools).bind(max_tokens=max_tokens_tool_round)
+    llm_final = llm.bind(max_tokens=max_tokens_final)
     tool_map = {t.name: t for t in tools}
 
     messages: List[BaseMessage] = [
@@ -384,7 +388,7 @@ def _run_react_json_agent(
 
     for round_num in range(max_rounds):
         tools_available = total_tool_calls < max_total_tool_calls
-        resp = (llm_with_tools if tools_available else llm).invoke(messages)
+        resp = (llm_with_tools if tools_available else llm_final).invoke(messages)
 
         finish_reason = (
             (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
@@ -490,7 +494,7 @@ def _run_react_json_agent(
     messages.append(
         HumanMessage(content="STOP. You have used all available rounds. Return ONLY the final JSON object now. No tools. No prose.")
     )
-    resp = llm.invoke(messages)
+    resp = llm_final.invoke(messages)
     content = getattr(resp, "content", "") or ""
     try:
         return _extract_json(content)
@@ -563,7 +567,7 @@ def triage_paper_node(state: AgentState) -> AgentState:
     prompt = build_system_prompt(AGENT1_PROMPT, max_tool_calls=0, abstract=abstract)
 
     try:
-        resp = llm.invoke(prompt)
+        resp = llm.bind(max_tokens=512).invoke(prompt)
         theme_pick = _extract_json(getattr(resp, "content", ""))
 
         theme_pick.setdefault("confidence", 0.0)
