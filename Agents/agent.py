@@ -551,7 +551,7 @@ def _run_react_json_agent(
         )
         if finish_reason == "length":
             logger.warning(f"Round {round_num + 1}: Response truncated. Asking retry.")
-            messages.append(resp)
+            messages.append(AIMessage(content=getattr(resp, "content", "") or ""))
             messages.append(
                 HumanMessage(content="Your response was cut off. Be MORE CONCISE. Output ONLY the required JSON object.")
             )
@@ -560,7 +560,7 @@ def _run_react_json_agent(
         invalid_tcs = getattr(resp, "invalid_tool_calls", None) or []
         if invalid_tcs:
             logger.warning(f"Round {round_num + 1}: {len(invalid_tcs)} invalid tool call(s).")
-            messages.append(resp)
+            messages.append(AIMessage(content=getattr(resp, "content", "") or ""))
             messages.append(
                 HumanMessage(content=f"Malformed tool call. Available tools: {list(tool_map.keys())}. Use the correct format.")
             )
@@ -622,9 +622,30 @@ def _run_react_json_agent(
 
             continue
 
-        content = getattr(resp, "content", "") or ""
+        content_raw = getattr(resp, "content", "") or ""
+        # Strip LLaMA special tokens (e.g. <|python_tag|>) that bleed into content
+        # when vLLM's tool parser fails. Keep the flag so we can detect the failure.
+        has_python_tag = "<|python_tag|>" in content_raw
+        content = re.sub(r"<\|[^|>]+\|>", "", content_raw).strip()
         last_content = content
-        messages.append(resp)
+        messages.append(AIMessage(content=content))
+
+        # <|python_tag|> in content = vLLM tool parser ran but hit KeyError: 'name'
+        if has_python_tag:
+            logger.warning(
+                f"Round {round_num + 1}: Content contains <|python_tag|> — "
+                "tool call parse failed (model omitted 'name'). Asking model to retry."
+            )
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "Your tool call was malformed — the 'name' field is missing. Required format:\n"
+                        '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                        f"Available tools: {list(tool_map.keys())}. Try again."
+                    )
+                )
+            )
+            continue
 
         try:
             maybe_tc = json.loads(content)
@@ -644,6 +665,25 @@ def _run_react_json_agent(
             # calls as JSON in the message body instead of the structured tool_calls field.
             # Example: {"name": "get_matching_content", "parameters": {"query": "..."}}
             # If we returned this as the final result it would land in factor_extract as-is.
+            # Catch nameless tool call that slipped past the json.loads check above
+            # (e.g. {"parameters": {...}} with no "name"). Returning this as the
+            # final answer would corrupt factor_extract.
+            if isinstance(parsed, dict) and "parameters" in parsed and "name" not in parsed:
+                logger.warning(
+                    f"Round {round_num + 1}: _extract_json returned a dict with "
+                    "'parameters' but no 'name' — treating as failed tool call."
+                )
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "Your response is a tool call missing the 'name' field. Required format:\n"
+                            '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                            f"Available tools: {list(tool_map.keys())}. Try again."
+                        )
+                    )
+                )
+                continue
+
             if isinstance(parsed, dict) and tools_available:
                 tc_name = parsed.get("name")
                 tc_params = parsed.get("parameters") or parsed.get("args") or parsed.get("arguments")
