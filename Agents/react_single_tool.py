@@ -235,6 +235,6 @@ def patch_agent_module():
         from Agents.agent import app
         result = app.invoke(initial_state)
     """
-    import Agents.agent as agent_module
+    import Agents.agent_old as agent_module
     agent_module._run_react_json_agent = run_react_sequential_tools
     logger.info("Patched agent module to use sequential-tool ReAct loop")

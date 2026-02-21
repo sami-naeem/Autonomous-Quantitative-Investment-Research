@@ -7,15 +7,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(dotenv_path=env_path)
+#env_path = Path(__file__).parent.parent / ".env"
+#load_dotenv(dotenv_path=env_path)
+
+env_path = Path("Agents/agent.py").resolve().parent.parent / ".env"
+load_dotenv(env_path)
 
 
 class GCSConfig:
     """Google Cloud Storage configuration"""
     PROJECT_ID = "agentic-investment-research"
     SOURCE_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "investment-research").strip()
-    SOURCE_PREFIX = "processed/"  # Where processed papers with markdown are stored
+    SOURCE_PREFIX = "all_jkp_papers_final_processed/"  # Where processed papers with markdown are stored
     LOCAL_TEMP_DIR = Path("./temp_papers")
     CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     # Fallback for Lambda/server environment

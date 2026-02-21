@@ -1,52 +1,64 @@
 """
 Google Cloud Storage utilities for paper management.
 Handles authentication, listing, and downloading papers from GCS.
+
+This version is SAFE for service accounts without
+`storage.buckets.list` permission.
 """
+
 import os
-import logging
 from typing import List, Optional
 from google.cloud import storage
 
 from Agents.config import GCSConfig
 
-logger = logging.getLogger("agent-pipeline")
-
-# Module-level storage client (singleton pattern)
-_storage_client = None
+# Module-level storage client (singleton)
+_storage_client: Optional[storage.Client] = None
 
 
 def ensure_auth() -> Optional[storage.Client]:
     """
     Ensure GCS authentication is set up correctly.
 
-    Returns:
-        storage.Client if authentication succeeds, None otherwise
+    - NEVER calls list_buckets()
+    - Verifies access using bucket.exists() and list_blobs()
     """
     try:
-        # Check for Lambda/server environment credentials first
+        # Prefer explicit credentials path if it exists (Lambda-style)
         if os.path.exists(GCSConfig.LAMBDA_CREDENTIALS_PATH):
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GCSConfig.LAMBDA_CREDENTIALS_PATH
-            logger.info("Using Lambda service account key")
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = (
+                GCSConfig.LAMBDA_CREDENTIALS_PATH
+            )
 
-        # Create storage client
-        storage_client = storage.Client(project=GCSConfig.PROJECT_ID)
+        client = storage.Client(project=GCSConfig.PROJECT_ID)
 
-        # Test authentication by listing buckets
-        list(storage_client.list_buckets(max_results=1))
-        logger.info("GCS authentication successful")
+        # ✅ Bucket-scoped auth check (NO project-wide listing)
+        bucket = client.bucket(GCSConfig.SOURCE_BUCKET_NAME)
 
-        return storage_client
-    except Exception as e:
-        logger.error(f"GCS authentication failed: {e}")
+        if not bucket.exists():
+            raise PermissionError(
+                f"Cannot access bucket '{GCSConfig.SOURCE_BUCKET_NAME}' "
+                "(missing storage.buckets.get or bucket does not exist)."
+            )
+
+        # ✅ Object-level permission check
+        next(
+            bucket.list_blobs(
+                prefix=GCSConfig.SOURCE_PREFIX,
+                max_results=1,
+            ),
+            None,
+        )
+
+        return client
+
+    except Exception:
         return None
 
 
 def get_storage_client() -> Optional[storage.Client]:
     """
     Get or create the GCS storage client (singleton pattern).
-
-    Returns:
-        storage.Client instance or None if authentication fails
     """
     global _storage_client
     if _storage_client is None:
@@ -56,64 +68,45 @@ def get_storage_client() -> Optional[storage.Client]:
 
 def list_available_papers(storage_client: storage.Client) -> List[str]:
     """
-    List available processed papers from GCS bucket.
-
-    Args:
-        storage_client: Authenticated GCS storage client
-
-    Returns:
-        Sorted list of paper names (folder names in the processed/ directory)
+    List available processed papers from the configured bucket/prefix.
     """
     try:
         bucket = storage_client.bucket(GCSConfig.SOURCE_BUCKET_NAME)
-        blobs = list(bucket.list_blobs(prefix=GCSConfig.SOURCE_PREFIX))
 
-        # Get unique paper folder names (processed papers have folder structure)
+        blobs = bucket.list_blobs(prefix=GCSConfig.SOURCE_PREFIX)
+
         paper_names = set()
         for blob in blobs:
-            # Extract paper name from path like "processed/paper_name/file.md"
-            parts = blob.name.replace(GCSConfig.SOURCE_PREFIX, "").split("/")
+            # expected path: <prefix>/<paper_name>/<file>.md
+            remainder = blob.name.replace(GCSConfig.SOURCE_PREFIX, "")
+            parts = remainder.split("/")
             if parts and parts[0]:
                 paper_names.add(parts[0])
 
-        return sorted(list(paper_names))
-    except Exception as e:
-        logger.error(f"Error listing papers: {e}")
+        return sorted(paper_names)
+
+    except Exception:
         return []
 
 
-def download_paper_text(storage_client: storage.Client, paper_name: str) -> Optional[str]:
+def download_paper_text(
+    storage_client: storage.Client,
+    paper_name: str,
+) -> Optional[str]:
     """
-    Download and read the markdown content of a processed paper.
-
-    Args:
-        storage_client: Authenticated GCS storage client
-        paper_name: Name of the paper folder to download
-
-    Returns:
-        Paper content as markdown string, or None if not found
+    Download markdown content for a given paper folder.
     """
     try:
         bucket = storage_client.bucket(GCSConfig.SOURCE_BUCKET_NAME)
 
-        # Look for markdown files in the paper's folder
         prefix = f"{GCSConfig.SOURCE_PREFIX}{paper_name}/"
-        blobs = list(bucket.list_blobs(prefix=prefix))
+        blobs = bucket.list_blobs(prefix=prefix)
 
-        # Find markdown file
-        md_blob = None
         for blob in blobs:
             if blob.name.endswith(".md"):
-                md_blob = blob
-                break
+                return blob.download_as_text()
 
-        if md_blob:
-            content = md_blob.download_as_text()
-            logger.info(f"Downloaded paper: {paper_name} ({len(content)} characters)")
-            return content
-        else:
-            logger.warning(f"No markdown file found for paper: {paper_name}")
-            return None
-    except Exception as e:
-        logger.error(f"Error downloading paper {paper_name}: {e}")
+        return None
+
+    except Exception:
         return None
