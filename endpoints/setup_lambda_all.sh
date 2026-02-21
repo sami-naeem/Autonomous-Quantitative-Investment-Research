@@ -142,14 +142,14 @@ docker inspect ${VLLM_IMAGE} > /dev/null 2>&1 && echo "Docker image ready." || {
 # --- Step 5b: Patch partial-json-parser inside vLLM image ---
 # Fixes: JSONDecodeError: Unterminated string in llama_tool_parser.py
 # Cause: partial-json-parser <= 0.2.x crashes on `{"` (2-char streaming buffer).
-# Fix:   Build a thin wrapper image with partial-json-parser >= 0.3.1 installed.
+# Fix:   Build a thin wrapper image with a real PyPI release (0.2.1.1.post7) installed.
 #        VLLM_IMAGE is updated so all generated startup scripts use the patched image.
 echo ""
 echo "[5b/13] Patching partial-json-parser in vLLM image..."
 PATCHED_IMAGE="vllm-patched:latest"
 docker build -t "${PATCHED_IMAGE}" - << DOCKERFILE_EOF
 FROM ${VLLM_IMAGE}
-RUN pip install "partial-json-parser>=0.3.1" --quiet --no-cache-dir
+RUN pip install --upgrade "partial-json-parser==0.2.1.1.post7" --quiet --no-cache-dir
 DOCKERFILE_EOF
 VLLM_IMAGE="${PATCHED_IMAGE}"
 echo "  Patched image built: ${VLLM_IMAGE}"
