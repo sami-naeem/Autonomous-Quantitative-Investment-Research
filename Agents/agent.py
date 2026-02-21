@@ -1,6 +1,13 @@
 """
 Paper replication agent pipeline for the Autonomous Quantitative Investment Research project.
-(v2 — strict JSON contract, tool-call budgets, sanitized tool results)
+
+v3 highlights:
+- Strict JSON output contract for all agent stages.
+- Tool-call budgets and sequential handling to prevent runaway loops.
+- Sanitized tool results before reinjection into model context.
+- Upgraded BM25-backed `get_matching_content` tool for paper passage retrieval.
+- Hardened JSON extraction/repair for malformed wrapper output
+  (for example doubled outer braces like {{ ... }} in repair responses).
 """
 
 from pathlib import Path
@@ -342,6 +349,8 @@ def _extract_json(text: str) -> dict:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```\s*$", "", raw)
     raw = raw.strip()
+    if raw.startswith("{{") and raw.endswith("}}"):
+        raw = raw[1:-1].strip()
 
     try:
         return json.loads(raw)
@@ -372,6 +381,9 @@ def _extract_json(text: str) -> dict:
         pass
 
     repaired = candidate
+    # Some models emit doubled outer braces: {{ ... }}. Unwrap if present.
+    repaired = re.sub(r"^\s*\{\{", "{", repaired)
+    repaired = re.sub(r"\}\}\s*$", "}", repaired)
     repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
     repaired = re.sub(r"//[^\n]*", "", repaired)
     repaired = re.sub(r"(?<=[\{,\s])\s*'([^']+)'\s*:", r' "\1":', repaired)
@@ -430,6 +442,7 @@ def sanitize_tool_result(result: Any, tool_name: str) -> str:
 _REPAIR_PROMPT_WITH_TEXT = (
     "You previously produced text that is not valid JSON.\n"
     "Convert it to a single valid JSON object matching the required schema.\n"
+    "Do not use doubled braces like {{ or }}.\n"
     "Output ONLY the JSON object. No prose, no markdown, no code fences.\n\n"
     "TEXT TO FIX:\n{text}\n"
 )
@@ -438,6 +451,7 @@ _REPAIR_PROMPT_FROM_CONTEXT = (
     "STOP. You must now return your final answer.\n"
     "Based on everything discussed above, return ONLY a single valid JSON object "
     "matching the required schema.\n"
+    "Do not use doubled braces like {{ or }}.\n"
     "No prose, no markdown, no code fences. Just the JSON."
 )
 
@@ -1014,3 +1028,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

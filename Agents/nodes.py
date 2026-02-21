@@ -139,11 +139,19 @@ def select_paper_node(state: AgentState) -> AgentState:
         available_papers = list_available_papers(storage_client)
         logger.info(f"Found {len(available_papers)} available papers")
 
-        # Randomly select from available papers (seeded if provided)
+        # Select from available papers (seeded if provided).
+        # Integer seeds map directly to an index (seed % N) so consecutive
+        # integers always yield distinct papers. random.choice() is not used
+        # for integers because different seeds can collide to the same index
+        # in small paper pools (e.g. seeds 3 and 13 both hit index 3 in a
+        # 10-paper list).
         if available_papers:
             seed = state.get("random_seed")
-            paper_name = random.Random(seed).choice(available_papers)
-            logger.info(f"Selected paper (seed={seed}): {paper_name}")
+            if isinstance(seed, int):
+                paper_name = available_papers[seed % len(available_papers)]
+            else:
+                paper_name = random.Random(seed).choice(available_papers)
+            logger.info(f"Selected paper (seed={seed}, pool={len(available_papers)}): {paper_name}")
         else:
             return {
                 **state,
