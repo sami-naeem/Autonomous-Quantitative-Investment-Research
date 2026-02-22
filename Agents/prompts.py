@@ -22,6 +22,7 @@ _JSON_CONTRACT_BASE = """=== JSON OUTPUT CONTRACT ===
 5. If information is not found, use the value "missing_or_unclear" (string) or
    add the item to the "missing_or_unclear" array. Never leave a required field empty.
 6. evidence/snippets: each snippet ≤600 chars, plain text only, no LaTeX, no tables.
+7. Never output literal placeholder tokens such as "str", "string", "<...>", "TBD", or field names as values.
 """
 
 # Extended contract: for agents that DO use tools (Agent 2, 3, 4)
@@ -95,6 +96,7 @@ OUTPUT RULES:
 - Return ONLY valid JSON with exactly two keys.
 - "purpose": 1-2 sentences on what the factor measures.
 - "computation_logic": prose describing how to compute the factor, detailed enough to implement.
+- Never output literal placeholders. Do not use values like "str", "string", "<...>", "TBD", or key names.
 
 STYLE RULES for computation_logic:
 - No equations, no LaTeX, no math symbols.

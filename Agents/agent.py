@@ -20,7 +20,7 @@ import re
 import httpx
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from langgraph.graph import StateGraph, END
 
@@ -505,6 +505,73 @@ def _coerce_tool_args(args: dict) -> dict:
     return coerced
 
 
+def _normalize_tool_query(query: Any) -> str:
+    text = str(query or "")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _retrieved_snippet_score(snippet: str) -> float:
+    text = (snippet or "").strip()
+    if not text:
+        return -1e9
+    if "No relevant content found" in text:
+        return -1000.0
+
+    score = 0.0
+    m = re.search(r"\[MATCH score=([0-9]+(?:\.[0-9]+)?)\]", text)
+    if m:
+        score += float(m.group(1)) * 10.0
+    if text.startswith("[MATCH"):
+        score += 5.0
+    if text.startswith("[CONTEXT]"):
+        score += 1.0
+    score += min(len(text), 1500) / 1500.0
+    return score
+
+
+def _rank_snippets(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> List[str]:
+    best_by_text: Dict[str, float] = {}
+    for raw in snippets:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        s = _retrieved_snippet_score(text)
+        prev = best_by_text.get(text)
+        if prev is None or s > prev:
+            best_by_text[text] = s
+
+    ranked = sorted(best_by_text.items(), key=lambda kv: kv[1], reverse=True)
+    out: List[str] = []
+    total = 0
+    for text, _ in ranked:
+        if total + len(text) > max_chars:
+            break
+        out.append(text)
+        total += len(text)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _cached_evidence_blob(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> str:
+    picked = _rank_snippets(snippets, max_items=max_items, max_chars=max_chars)
+    return "\n\n---\n\n".join(picked)
+
+
+def _collect_retrieval_snippets(tool_name: str, result: Any) -> List[str]:
+    if tool_name != "get_matching_content" or not isinstance(result, list):
+        return []
+    out: List[str] = []
+    for item in result:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if text.startswith("No relevant content found"):
+            continue
+        out.append(text)
+    return out
+
+
 def _run_react_json_agent(
     *,
     llm,
@@ -514,9 +581,13 @@ def _run_react_json_agent(
     max_rounds: int = 8,
     max_tool_calls_per_round: int = 3,
     max_total_tool_calls: int = 8,
+    retrieved_snippets: List[str] | None = None,
+    used_queries: Set[str] | None = None,
 ) -> Dict[str, Any]:
     llm_with_tools = llm.bind_tools(tools)
     tool_map = {t.name: t for t in tools}
+    retrieved_snippets = retrieved_snippets if retrieved_snippets is not None else []
+    used_queries = used_queries if used_queries is not None else set()
 
     messages: List[BaseMessage] = [
         SystemMessage(system_prompt),
@@ -526,6 +597,20 @@ def _run_react_json_agent(
     total_tool_calls = 0
     json_retry_used = False
     last_content = ""
+
+    def _push_cached_evidence_finalization(reason: str) -> None:
+        evidence = _cached_evidence_blob(retrieved_snippets)
+        evidence_text = evidence if evidence else "No cached evidence available."
+        messages.append(
+            HumanMessage(
+                content=(
+                    f"{reason}\n"
+                    "Do not call tools again. Use ONLY the cached evidence below.\n\n"
+                    f"Cached evidence:\n{evidence_text}\n\n"
+                    "Return ONLY the final JSON object matching the schema. No prose."
+                )
+            )
+        )
 
     for round_num in range(max_rounds):
         tools_available = total_tool_calls < max_total_tool_calls
@@ -558,15 +643,20 @@ def _run_react_json_agent(
                 logger.warning(f"Round {round_num + 1}: {len(tool_calls)} tool calls requested; capping to {max_tool_calls_per_round}.")
                 tool_calls = tool_calls[:max_tool_calls_per_round]
 
-            total_tool_calls += len(tool_calls)
-
-            if total_tool_calls >= max_total_tool_calls:
-                logger.warning(f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). Next round will force final JSON (tools disabled).")
-
             if len(tool_calls) > 1:
                 logger.info(f"Round {round_num + 1}: {len(tool_calls)} tool calls. Processing sequentially: {[tc.get('name') for tc in tool_calls]}")
 
+            budget_exhausted_mid_round = False
             for tc in tool_calls:
+                if total_tool_calls >= max_total_tool_calls:
+                    logger.warning(
+                        f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
+                        "Skipping remaining tool calls and forcing cached-evidence finalization."
+                    )
+                    _push_cached_evidence_finalization("Tool budget is exhausted.")
+                    budget_exhausted_mid_round = True
+                    break
+
                 name = tc.get("name")
                 args = tc.get("args", {}) or {}
                 tool_id = tc.get("id")
@@ -583,6 +673,24 @@ def _run_react_json_agent(
                         HumanMessage(content=f"Tool '{name}' does not exist. Available tools: {list(tool_map.keys())}.")
                     )
                     break
+
+                if name == "get_matching_content":
+                    query_raw = args.get("query", "") if isinstance(args, dict) else ""
+                    q_norm = _normalize_tool_query(query_raw)
+                    if q_norm and q_norm in used_queries:
+                        logger.info(f"Round {round_num + 1}: Duplicate query skipped: {query_raw!r}")
+                        duplicate_result = [
+                            f"Duplicate query skipped: '{query_raw}'. Use a distinct keyword or return final JSON."
+                        ]
+                        messages.append(
+                            ToolMessage(
+                                content=sanitize_tool_result(duplicate_result, name),
+                                tool_call_id=tool_id,
+                            )
+                        )
+                        continue
+                    if q_norm:
+                        used_queries.add(q_norm)
 
                 single_tool_ai_msg = AIMessage(
                     content="",
@@ -601,10 +709,22 @@ def _run_react_json_agent(
                     logger.warning(f"Tool '{name}' raised {type(e).__name__}: {e}")
                     result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
 
+                total_tool_calls += 1
+                retrieved_snippets.extend(_collect_retrieval_snippets(name, result))
+
                 messages.append(
                     ToolMessage(content=sanitize_tool_result(result, name), tool_call_id=tool_id)
                 )
 
+            if total_tool_calls >= max_total_tool_calls:
+                logger.warning(
+                    f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
+                    "Next round will force final JSON using cached evidence."
+                )
+                _push_cached_evidence_finalization("Tool budget is exhausted.")
+
+            if budget_exhausted_mid_round:
+                continue
             continue
 
         content_raw = getattr(resp, "content", "") or ""
@@ -675,16 +795,45 @@ def _run_react_json_agent(
 
                 if has_text_tool_shape:
                     if tc_name in tool_map and tools_available:
+                        if total_tool_calls >= max_total_tool_calls:
+                            logger.warning(
+                                f"Round {round_num + 1}: Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}) "
+                                "before text-embedded tool call execution."
+                            )
+                            _push_cached_evidence_finalization("Tool budget is exhausted.")
+                            continue
+
                         logger.info(
                             f"Round {round_num + 1}: Text-embedded tool call detected for '{tc_name}'. Executing."
                         )
-                        total_tool_calls += 1
                         tc_params_coerced = _coerce_tool_args(tc_params) if isinstance(tc_params, dict) else {}
+
+                        if tc_name == "get_matching_content":
+                            query_raw = tc_params_coerced.get("query", "") if isinstance(tc_params_coerced, dict) else ""
+                            q_norm = _normalize_tool_query(query_raw)
+                            if q_norm and q_norm in used_queries:
+                                logger.info(f"Round {round_num + 1}: Duplicate text-embedded query skipped: {query_raw!r}")
+                                messages.append(
+                                    HumanMessage(
+                                        content=(
+                                            f"Duplicate query skipped: '{query_raw}'. "
+                                            "Use a distinct query or return final JSON now."
+                                        )
+                                    )
+                                )
+                                continue
+                            if q_norm:
+                                used_queries.add(q_norm)
+
                         try:
                             tool_result = tool_map[tc_name].invoke(tc_params_coerced)
                         except Exception as e:
                             logger.warning(f"Tool '{tc_name}' raised {type(e).__name__}: {e}")
                             tool_result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
+
+                        total_tool_calls += 1
+                        retrieved_snippets.extend(_collect_retrieval_snippets(tc_name, tool_result))
+
                         messages.append(
                             HumanMessage(
                                 content=(
@@ -696,8 +845,9 @@ def _run_react_json_agent(
                         if total_tool_calls >= max_total_tool_calls:
                             logger.warning(
                                 f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
-                                "Next round will force final JSON (tools disabled)."
+                                "Next round will force final JSON using cached evidence."
                             )
+                            _push_cached_evidence_finalization("Tool budget is exhausted.")
                         continue
 
                     if not tools_available:
@@ -705,14 +855,7 @@ def _run_react_json_agent(
                             f"Round {round_num + 1}: Model returned a tool call after tool budget exhaustion. "
                             "Requesting final JSON without tools."
                         )
-                        messages.append(
-                            HumanMessage(
-                                content=(
-                                    "Tool budget is exhausted. Do not call tools again. "
-                                    "Return ONLY the final JSON object matching the schema, using evidence already gathered."
-                                )
-                            )
-                        )
+                        _push_cached_evidence_finalization("Tool budget is exhausted.")
                         continue
 
                     logger.warning(
@@ -743,8 +886,17 @@ def _run_react_json_agent(
                 return _force_json(llm, content, messages=messages)
 
     logger.warning(f"Exhausted {max_rounds} rounds without final JSON. Forcing final JSON output.")
+    evidence = _cached_evidence_blob(retrieved_snippets)
+    evidence_text = evidence if evidence else "No cached evidence available."
     messages.append(
-        HumanMessage(content="STOP. You have used all available rounds. Return ONLY the final JSON object now. No tools. No prose.")
+        HumanMessage(
+            content=(
+                "STOP. You have used all available rounds.\n"
+                "Do not call tools again. Use ONLY the cached evidence below.\n\n"
+                f"Cached evidence:\n{evidence_text}\n\n"
+                "Return ONLY the final JSON object now. No tools. No prose."
+            )
+        )
     )
     resp = llm.invoke(messages)
     content = getattr(resp, "content", "") or ""
@@ -811,6 +963,25 @@ ALLOWED_THEMES = {
     "Debt Issuance", "Size", "Quality", "Seasonality", "Value", "Momentum",
 }
 
+_PLACEHOLDER_TOKENS = {"", "str", "string", "purpose", "computation_logic", "tbd", "<...>"}
+
+
+def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
+    """Guarantee non-empty, schema-safe factor_extract fields."""
+    if not isinstance(payload, dict):
+        payload = {}
+
+    def _clean(value: Any) -> str:
+        text = str(value or "").strip()
+        if text.lower() in _PLACEHOLDER_TOKENS:
+            return "missing_or_unclear"
+        return text or "missing_or_unclear"
+
+    return {
+        "purpose": _clean(payload.get("purpose")),
+        "computation_logic": _clean(payload.get("computation_logic")),
+    }
+
 
 def triage_paper_node(state: AgentState) -> AgentState:
     """Agent 1: classify paper theme using the abstract."""
@@ -871,7 +1042,9 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
     prompt = build_system_prompt(AGENT2_EXTRACT_PROMPT, max_tool_calls=5, abstract=abstract)
 
     try:
-        factor_extract = _run_react_json_agent(
+        retrieved_snippets: List[str] = []
+        used_queries: Set[str] = set()
+        raw_factor_extract = _run_react_json_agent(
             llm=llm,
             system_prompt=prompt,
             user_payload=payload,
@@ -879,37 +1052,55 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
             max_rounds=7,
             max_tool_calls_per_round=2,
             max_total_tool_calls=5,
+            retrieved_snippets=retrieved_snippets,
+            used_queries=used_queries,
         )
-        if not isinstance(factor_extract, dict):
-            factor_extract = {}
+        if retrieved_snippets:
+            logger.info(
+                f"Agent 2 cached {len(retrieved_snippets)} retrieval snippets "
+                f"from {len(used_queries)} unique queries."
+            )
+        if not isinstance(raw_factor_extract, dict):
+            raw_factor_extract = {}
 
         # Hard schema guard: prevent leaked tool-call payloads from being persisted.
-        if any(k in factor_extract for k in ("name", "parameters", "args", "arguments")):
+        if any(k in raw_factor_extract for k in ("name", "parameters", "args", "arguments")):
             logger.warning("Agent 2 returned tool-call shaped JSON as final output. Coercing to empty schema.")
-            factor_extract = {"purpose": "", "computation_logic": ""}
-        else:
-            factor_extract = {
-                "purpose": str(factor_extract.get("purpose", "") or ""),
-                "computation_logic": str(factor_extract.get("computation_logic", "") or ""),
-            }
+            raw_factor_extract = {}
 
-        # Fallback path for models that fail to produce final filled JSON after tool use.
-        if not factor_extract.get("purpose") and not factor_extract.get("computation_logic"):
-            logger.warning("Agent 2 returned empty fields. Running snippet-based fallback extraction.")
-            factor_extract = fallback_factor_extract_from_snippets(
+        factor_extract = _normalize_factor_extract(raw_factor_extract)
+
+        # Fallback path: if either field is still unclear, synthesize from cached evidence.
+        if (
+            factor_extract.get("purpose") == "missing_or_unclear"
+            or factor_extract.get("computation_logic") == "missing_or_unclear"
+        ):
+            logger.warning("Agent 2 output incomplete. Running snippet-based fallback extraction.")
+            fallback_extract = fallback_factor_extract_from_snippets(
                 llm=llm,
                 abstract=abstract,
                 theme_pick=state.get("theme_pick", {}),
                 query_fn=get_matching_content,
                 json_parser=_extract_json,
                 logger=logger,
+                prefetched_snippets=retrieved_snippets,
             )
+            fallback_extract = _normalize_factor_extract(fallback_extract)
+            factor_extract = {
+                "purpose": (
+                    fallback_extract["purpose"]
+                    if factor_extract.get("purpose") == "missing_or_unclear"
+                    else factor_extract.get("purpose", "missing_or_unclear")
+                ),
+                "computation_logic": (
+                    fallback_extract["computation_logic"]
+                    if factor_extract.get("computation_logic") == "missing_or_unclear"
+                    else factor_extract.get("computation_logic", "missing_or_unclear")
+                ),
+            }
     except Exception as e:
         logger.error(f"Factor extraction failed: {e}")
-        factor_extract = {
-            "purpose": "",
-            "computation_logic": "",
-        }
+        factor_extract = _normalize_factor_extract({})
 
     _log_agent_output("Agent 2 (factor_extract)", factor_extract)
 
@@ -923,11 +1114,12 @@ def save_output_to_gcs_node(state: AgentState) -> AgentState:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
     blob_name = f"{paper_name}/{model_choice}/{timestamp}.json"
 
+    normalized_factor_extract = _normalize_factor_extract(state.get("factor_extract", {}))
     payload = {
         "paper_name": paper_name,
         "model_choice": state.get("model_choice", ""),
         "theme_pick": state.get("theme_pick", {}),
-        "factor_extract": state.get("factor_extract", {}),
+        "factor_extract": normalized_factor_extract,
     }
 
     storage_client = get_storage_client()

@@ -2,25 +2,68 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List
+
+_PLACEHOLDER_TOKENS = {"", "str", "string", "purpose", "computation_logic", "tbd", "<...>"}
+
+
+def _snippet_score(snippet: str) -> float:
+    text = (snippet or "").strip()
+    if not text:
+        return -1e9
+    if "No relevant content found" in text:
+        return -1000.0
+    score = 0.0
+    m = re.search(r"\[MATCH score=([0-9]+(?:\.[0-9]+)?)\]", text)
+    if m:
+        score += float(m.group(1)) * 10.0
+    if text.startswith("[MATCH"):
+        score += 5.0
+    if text.startswith("[CONTEXT]"):
+        score += 1.0
+    score += min(len(text), 1500) / 1500.0
+    return score
 
 
 def _compact_snippets(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> str:
-    unique: List[str] = []
-    seen = set()
-    total = 0
+    best_by_text: Dict[str, float] = {}
     for s in snippets:
         text = (s or "").strip()
-        if not text or text in seen:
+        if not text:
             continue
+        score = _snippet_score(text)
+        prev = best_by_text.get(text)
+        if prev is None or score > prev:
+            best_by_text[text] = score
+
+    ranked = sorted(best_by_text.items(), key=lambda kv: kv[1], reverse=True)
+    selected: List[str] = []
+    total = 0
+    for text, _ in ranked:
         if total + len(text) > max_chars:
             break
-        unique.append(text)
-        seen.add(text)
+        selected.append(text)
         total += len(text)
-        if len(unique) >= max_items:
+        if len(selected) >= max_items:
             break
-    return "\n\n---\n\n".join(unique)
+    return "\n\n---\n\n".join(selected)
+
+
+def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
+    if not isinstance(payload, dict):
+        payload = {}
+
+    def _clean(value: Any) -> str:
+        text = str(value or "").strip()
+        if text.lower() in _PLACEHOLDER_TOKENS:
+            return "missing_or_unclear"
+        return text or "missing_or_unclear"
+
+    return {
+        "purpose": _clean(payload.get("purpose")),
+        "computation_logic": _clean(payload.get("computation_logic")),
+    }
 
 
 def fallback_factor_extract_from_snippets(
@@ -31,8 +74,9 @@ def fallback_factor_extract_from_snippets(
     query_fn: Callable[[str], List[str]],
     json_parser: Callable[[str], Dict[str, Any]],
     logger: Any,
+    prefetched_snippets: List[str] | None = None,
 ) -> Dict[str, str]:
-    """Run one JSON-only extraction pass over deterministic BM25 snippets."""
+    """Run one JSON-only extraction pass over cached/retrieved BM25 snippets."""
     queries = [
         "factor definition",
         "portfolio construction",
@@ -42,27 +86,29 @@ def fallback_factor_extract_from_snippets(
         "long short",
     ]
 
-    collected: List[str] = []
-    for q in queries:
-        try:
-            if hasattr(query_fn, "invoke"):
-                # LangChain StructuredTool path
-                res = query_fn.invoke({"query": q})
-            else:
-                # Plain callable path
-                res = query_fn(q)
-            collected.extend(res or [])
-        except Exception as e:
-            logger.warning(f"Fallback snippet query failed for {q!r}: {type(e).__name__}: {e}")
+    collected: List[str] = list(prefetched_snippets or [])
+    if not collected:
+        for q in queries:
+            try:
+                if hasattr(query_fn, "invoke"):
+                    # LangChain StructuredTool path
+                    res = query_fn.invoke({"query": q})
+                else:
+                    # Plain callable path
+                    res = query_fn(q)
+                collected.extend(res or [])
+            except Exception as e:
+                logger.warning(f"Fallback snippet query failed for {q!r}: {type(e).__name__}: {e}")
 
     snippets_blob = _compact_snippets(collected)
     if not snippets_blob:
-        return {"purpose": "", "computation_logic": ""}
+        return _normalize_factor_extract({})
 
     prompt = (
         "You are extracting factor replication details from paper snippets.\n"
         "Return ONLY a valid JSON object with exactly these keys:\n"
         '{"purpose": "str", "computation_logic": "str"}\n'
+        "Never output literal placeholders. Do not return values like 'str', 'string', '<...>', or 'TBD'.\n"
         "Use only evidence in snippets and abstract. If uncertain, be concise and state assumptions.\n\n"
         f"Theme pick:\n{theme_pick}\n\n"
         f"Abstract:\n{abstract}\n\n"
@@ -72,12 +118,7 @@ def fallback_factor_extract_from_snippets(
     try:
         resp = llm.invoke(prompt)
         parsed = json_parser(getattr(resp, "content", "") or "")
-        if not isinstance(parsed, dict):
-            return {"purpose": "", "computation_logic": ""}
-        return {
-            "purpose": str(parsed.get("purpose", "") or ""),
-            "computation_logic": str(parsed.get("computation_logic", "") or ""),
-        }
+        return _normalize_factor_extract(parsed)
     except Exception as e:
         logger.warning(f"Fallback extraction call failed: {type(e).__name__}: {e}")
-        return {"purpose": "", "computation_logic": ""}
+        return _normalize_factor_extract({})
