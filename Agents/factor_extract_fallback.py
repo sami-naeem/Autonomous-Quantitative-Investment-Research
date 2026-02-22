@@ -11,6 +11,23 @@ _LOW_INFO_PATTERNS = {
     "cross-sectional regression",
     "cross sectional regression",
 }
+_META_PATTERNS = {
+    "given paper snippet",
+    "paper snippet",
+    "use evidence from the snippet",
+    "replicate the results",
+    "replicate results",
+    "apply the same methodology",
+    "identify relevant factors",
+    "extract factor replication details",
+}
+_META_STARTS = (
+    "extract ",
+    "use ",
+    "identify ",
+    "replicate ",
+    "analyze ",
+)
 
 
 def _word_count(text: str) -> int:
@@ -23,7 +40,11 @@ def _is_low_information_field(text: str) -> bool:
         return True
     if value in _LOW_INFO_PATTERNS:
         return True
-    return _word_count(value) < 8
+    if any(p in value for p in _META_PATTERNS):
+        return True
+    if value.startswith(_META_STARTS) and ("snippet" in value or "paper" in value):
+        return True
+    return _word_count(value) < 3
 
 
 def _is_low_information_extract(payload: Dict[str, str]) -> bool:
@@ -155,6 +176,7 @@ def fallback_factor_extract_from_snippets(
             "Retry and return ONLY valid JSON with keys purpose and computation_logic.\n"
             "Each field must be at least 3 words.\n"
             "Do not use generic responses like 'factor replication' or 'cross-sectional regression'.\n"
+            "Do not write meta-instructions (e.g., 'use evidence from snippet', 'apply the same methodology').\n"
             "Use concrete details from snippets (e.g., variable definition, sorting/regression setup, timing).\n\n"
             f"Previous output:\n{first_pass}\n\n"
             f"Theme pick:\n{theme_pick}\n\n"

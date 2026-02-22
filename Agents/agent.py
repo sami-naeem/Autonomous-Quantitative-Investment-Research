@@ -969,6 +969,23 @@ _LOW_INFO_PATTERNS = {
     "cross-sectional regression",
     "cross sectional regression",
 }
+_META_PATTERNS = {
+    "given paper snippet",
+    "paper snippet",
+    "use evidence from the snippet",
+    "replicate the results",
+    "replicate results",
+    "apply the same methodology",
+    "identify relevant factors",
+    "extract factor replication details",
+}
+_META_STARTS = (
+    "extract ",
+    "use ",
+    "identify ",
+    "replicate ",
+    "analyze ",
+)
 
 
 def _word_count(text: str) -> int:
@@ -980,6 +997,10 @@ def _is_low_information_field(text: str) -> bool:
     if not value:
         return True
     if value in _LOW_INFO_PATTERNS:
+        return True
+    if any(p in value for p in _META_PATTERNS):
+        return True
+    if value.startswith(_META_STARTS) and ("snippet" in value or "paper" in value):
         return True
     return _word_count(value) < 3
 
@@ -1011,10 +1032,46 @@ def triage_paper_node(state: AgentState) -> AgentState:
 
     prompt = build_system_prompt(AGENT1_PROMPT, max_tool_calls=0, abstract=abstract)
 
+    def _parse_or_repair_theme_pick(raw_content: str) -> Dict[str, Any]:
+        try:
+            return _extract_json(raw_content)
+        except Exception as parse_err:
+            logger.warning(f"Paper triage JSON parse failed: {parse_err}. Trying repair.")
+            repaired = _force_json(llm, raw_content)
+            if isinstance(repaired, dict) and not repaired.get("_error"):
+                return repaired
+            raise
+
     try:
         resp = llm.invoke(prompt)
-        theme_pick = _extract_json(getattr(resp, "content", ""))
+        raw = getattr(resp, "content", "") or ""
+        theme_pick = _parse_or_repair_theme_pick(raw)
 
+    except Exception as first_err:
+        logger.warning(
+            f"Paper triage first attempt failed: {first_err}. Retrying once with stricter compact JSON instructions."
+        )
+        retry_prompt = (
+            prompt
+            + "\nIMPORTANT: Return compact JSON only.\n"
+            + "Keep rationale <= 2 short sentences.\n"
+            + "Each evidence phrase <= 12 words.\n"
+            + "Return at most 3 evidence_phrases.\n"
+        )
+        try:
+            resp2 = llm.invoke(retry_prompt)
+            raw2 = getattr(resp2, "content", "") or ""
+            theme_pick = _parse_or_repair_theme_pick(raw2)
+        except Exception as e:
+            logger.error(f"Paper triage failed: {e}")
+            theme_pick = {
+                "theme": "unknown",
+                "confidence": 0.0,
+                "rationale": str(e),
+                "evidence_phrases": [],
+            }
+
+    try:
         theme_pick.setdefault("confidence", 0.0)
         theme_pick["confidence"] = max(0.0, min(1.0, float(theme_pick["confidence"])))
         if theme_pick.get("theme") not in ALLOWED_THEMES:
@@ -1023,9 +1080,8 @@ def triage_paper_node(state: AgentState) -> AgentState:
         theme_pick.setdefault("rationale", "")
         theme_pick.setdefault("evidence_phrases", [])
         theme_pick["evidence_phrases"] = theme_pick["evidence_phrases"][:5]
-
     except Exception as e:
-        logger.error(f"Paper triage failed: {e}")
+        logger.error(f"Paper triage normalization failed: {e}")
         theme_pick = {
             "theme": "unknown",
             "confidence": 0.0,
