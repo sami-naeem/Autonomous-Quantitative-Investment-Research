@@ -964,6 +964,24 @@ ALLOWED_THEMES = {
 }
 
 _PLACEHOLDER_TOKENS = {"", "str", "string", "purpose", "computation_logic", "tbd", "<...>"}
+_LOW_INFO_PATTERNS = {
+    "factor replication",
+    "cross-sectional regression",
+    "cross sectional regression",
+}
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z0-9]+", text or ""))
+
+
+def _is_low_information_field(text: str) -> bool:
+    value = (text or "").strip().lower()
+    if not value:
+        return True
+    if value in _LOW_INFO_PATTERNS:
+        return True
+    return _word_count(value) < 3
 
 
 def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
@@ -1074,8 +1092,10 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
         if (
             factor_extract.get("purpose") == "missing_or_unclear"
             or factor_extract.get("computation_logic") == "missing_or_unclear"
+            or _is_low_information_field(factor_extract.get("purpose", ""))
+            or _is_low_information_field(factor_extract.get("computation_logic", ""))
         ):
-            logger.warning("Agent 2 output incomplete. Running snippet-based fallback extraction.")
+            logger.warning("Agent 2 output incomplete or low-information. Running snippet-based fallback extraction.")
             fallback_extract = fallback_factor_extract_from_snippets(
                 llm=llm,
                 abstract=abstract,
@@ -1089,12 +1109,18 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
             factor_extract = {
                 "purpose": (
                     fallback_extract["purpose"]
-                    if factor_extract.get("purpose") == "missing_or_unclear"
+                    if (
+                        factor_extract.get("purpose") == "missing_or_unclear"
+                        or _is_low_information_field(factor_extract.get("purpose", ""))
+                    )
                     else factor_extract.get("purpose", "missing_or_unclear")
                 ),
                 "computation_logic": (
                     fallback_extract["computation_logic"]
-                    if factor_extract.get("computation_logic") == "missing_or_unclear"
+                    if (
+                        factor_extract.get("computation_logic") == "missing_or_unclear"
+                        or _is_low_information_field(factor_extract.get("computation_logic", ""))
+                    )
                     else factor_extract.get("computation_logic", "missing_or_unclear")
                 ),
             }

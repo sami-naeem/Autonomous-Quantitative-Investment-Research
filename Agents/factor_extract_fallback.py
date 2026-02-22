@@ -6,6 +6,31 @@ import re
 from typing import Any, Callable, Dict, List
 
 _PLACEHOLDER_TOKENS = {"", "str", "string", "purpose", "computation_logic", "tbd", "<...>"}
+_LOW_INFO_PATTERNS = {
+    "factor replication",
+    "cross-sectional regression",
+    "cross sectional regression",
+}
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"[A-Za-z0-9]+", text or ""))
+
+
+def _is_low_information_field(text: str) -> bool:
+    value = (text or "").strip().lower()
+    if not value:
+        return True
+    if value in _LOW_INFO_PATTERNS:
+        return True
+    return _word_count(value) < 8
+
+
+def _is_low_information_extract(payload: Dict[str, str]) -> bool:
+    return (
+        _is_low_information_field(payload.get("purpose", ""))
+        or _is_low_information_field(payload.get("computation_logic", ""))
+    )
 
 
 def _snippet_score(snippet: str) -> float:
@@ -118,7 +143,27 @@ def fallback_factor_extract_from_snippets(
     try:
         resp = llm.invoke(prompt)
         parsed = json_parser(getattr(resp, "content", "") or "")
-        return _normalize_factor_extract(parsed)
+        first_pass = _normalize_factor_extract(parsed)
+        if not _is_low_information_extract(first_pass):
+            return first_pass
+
+        logger.warning(
+            "Fallback extraction produced low-information output. Retrying once with stricter requirements."
+        )
+        strict_prompt = (
+            "Your previous extraction was too generic.\n"
+            "Retry and return ONLY valid JSON with keys purpose and computation_logic.\n"
+            "Each field must be at least 3 words.\n"
+            "Do not use generic responses like 'factor replication' or 'cross-sectional regression'.\n"
+            "Use concrete details from snippets (e.g., variable definition, sorting/regression setup, timing).\n\n"
+            f"Previous output:\n{first_pass}\n\n"
+            f"Theme pick:\n{theme_pick}\n\n"
+            f"Abstract:\n{abstract}\n\n"
+            f"Snippets:\n{snippets_blob}\n"
+        )
+        resp2 = llm.invoke(strict_prompt)
+        parsed2 = json_parser(getattr(resp2, "content", "") or "")
+        return _normalize_factor_extract(parsed2)
     except Exception as e:
         logger.warning(f"Fallback extraction call failed: {type(e).__name__}: {e}")
         return _normalize_factor_extract({})
