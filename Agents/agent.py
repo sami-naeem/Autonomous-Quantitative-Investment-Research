@@ -37,6 +37,8 @@ from Agents.prompts import (
     AGENT2_EXTRACT_PROMPT,
     build_system_prompt,
 )
+from Agents.paper_retrieval import chunk_academic_markdown, normalize_for_bm25
+from Agents.factor_extract_fallback import fallback_factor_extract_from_snippets
 
 logging.basicConfig(
     level=LoggingConfig.LEVEL,
@@ -69,39 +71,8 @@ except ImportError:
 # Paper chunking & BM25 index helpers
 # ---------------------------------------------------------------------
 def _chunk_academic_markdown(text: str) -> List[str]:
-    """Split paper markdown into paragraph-level chunks for BM25 indexing.
-
-    Preprocessing steps:
-    - Replace display math ($$...$$) and inline math ($...$) with [EQ] placeholders
-      to prevent LaTeX tokens from polluting BM25 term frequencies.
-    - Attach short markdown headers (# ... ####) to the paragraph that follows them
-      so section context is preserved in the chunk.
-    - Drop fragments shorter than 80 chars (figure captions, lone page numbers, etc.).
-    """
-    # Display equations first (can be multiline)
-    text = re.sub(r'\$\$.*?\$\$', '[EQ]', text, flags=re.DOTALL)
-    # Inline math — limit width to avoid eating across paragraphs
-    text = re.sub(r'\$[^$\n]{1,120}\$', '[EQ]', text)
-
-    raw_chunks = re.split(r'\n{2,}', text)
-    chunks: List[str] = []
-    header_buffer = ""
-
-    for raw in raw_chunks:
-        chunk = raw.strip()
-        if not chunk:
-            continue
-        # Short markdown headers → buffer and attach to next paragraph
-        if re.match(r'^#{1,4}\s', chunk) and len(chunk) < 120:
-            header_buffer = chunk + "\n"
-            continue
-        full = header_buffer + chunk
-        header_buffer = ""
-        if len(full) > 80:
-            chunks.append(full)
-
-    return chunks
-
+    """Compatibility wrapper around the modular paper retrieval helper."""
+    return chunk_academic_markdown(text)
 
 def _build_paper_index(paper_text: str) -> None:
     """Build a BM25 index from the paper text and cache it in ContextVars.
@@ -121,7 +92,7 @@ def _build_paper_index(paper_text: str) -> None:
         _PAPER_BM25.set(None)
         return
 
-    tokenized = [c.lower().split() for c in chunks]
+    tokenized = [normalize_for_bm25(c).lower().split() for c in chunks]
     index = BM25Okapi(tokenized)
 
     _PAPER_CHUNKS.set(chunks)
@@ -921,6 +892,18 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
                 "purpose": str(factor_extract.get("purpose", "") or ""),
                 "computation_logic": str(factor_extract.get("computation_logic", "") or ""),
             }
+
+        # Fallback path for models that fail to produce final filled JSON after tool use.
+        if not factor_extract.get("purpose") and not factor_extract.get("computation_logic"):
+            logger.warning("Agent 2 returned empty fields. Running snippet-based fallback extraction.")
+            factor_extract = fallback_factor_extract_from_snippets(
+                llm=llm,
+                abstract=abstract,
+                theme_pick=state.get("theme_pick", {}),
+                query_fn=get_matching_content,
+                json_parser=_extract_json,
+                logger=logger,
+            )
     except Exception as e:
         logger.error(f"Factor extraction failed: {e}")
         factor_extract = {
@@ -1069,4 +1052,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
