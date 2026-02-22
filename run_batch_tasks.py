@@ -84,13 +84,20 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -
     }
 
 
-def run_all(model_choice: str = "base"):
+def run_all(model_choice: str = "base", start_index: int = 0):
     papers = list_papers()
     logger.info(f"Found {len(papers)} papers")
 
+    if start_index < 0:
+        raise ValueError("--start-index must be >= 0")
+    if start_index > len(papers):
+        raise ValueError(f"--start-index ({start_index}) is greater than number of papers ({len(papers)})")
+    if start_index > 0:
+        logger.info(f"Skipping first {start_index} papers; starting from index {start_index}")
+
     all_results = []
 
-    for i, paper_name in enumerate(papers):
+    for i, paper_name in enumerate(papers[start_index:], start=start_index):
         logger.info(f"[{i+1}/{len(papers)}] Processing: {paper_name}")
         try:
             text = download_paper_text(paper_name)
@@ -119,14 +126,26 @@ if __name__ == "__main__":
         default="base",
         help="LLM to use for the pipeline (default: base)",
     )
+    parser.add_argument(
+        "--start-index",
+        type=int,
+        default=0,
+        help="0-based paper index to start from (e.g., 18 skips the first 18 papers)",
+    )
     args = parser.parse_args()
 
-    results = run_all(model_choice=args.model)
+    results = run_all(model_choice=args.model, start_index=args.start_index)
 
 
 # Example usage:
-#    python run_batch_tasks.py --model custom # pyright: ignore[reportUndefinedVariable]
-#    python run_batch_tasks.py --model openai
-#   python run_batch_tasks.py --model finllama # type: ignore
-#   python run_batch_tasks.py --model base   # default, same as plain: python run_batch_tasks.py
-#   python run_batch_tasks.py --help         # shows all options
+#   python run_batch_tasks.py
+#   python run_batch_tasks.py --model base
+#   python run_batch_tasks.py --model openai
+#   python run_batch_tasks.py --model finllama  # type: ignore
+#   python run_batch_tasks.py --model custom    # pyright: ignore[reportUndefinedVariable]
+#   python run_batch_tasks.py --start-index 18
+#   python run_batch_tasks.py --model base --start-index 18  # skip first 18 papers
+#   python run_batch_tasks.py --model finllama --start-index 18  # skip first 18 papers
+
+#   python run_batch_tasks.py --model openai --start-index 18
+#   python run_batch_tasks.py --help

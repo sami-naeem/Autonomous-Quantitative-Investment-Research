@@ -82,11 +82,13 @@ AGENT2_EXTRACT_PROMPT = """{json_contract}
 
 ROLE: Extract the factor's purpose and computation logic from the paper.
 
-TOOL: get_matching_content(key) — returns paper snippets for a keyword.
+TOOL: get_matching_content(query) — returns relevant paper paragraphs for a short keyword query.
+Use 1-3 word queries (e.g. "portfolio sort", "holding period", "book-to-market").
+Do NOT use long sentences — the paper may phrase things differently.
 
 SEARCH PLAN (follow this order, then STOP):
-1. Search for 2-3 keywords related to factor definition/construction (e.g., "defined as", "computed", "ratio", "sort", "portfolio").
-2. Search for 1-2 keywords related to timing/rebalancing (e.g., "lag", "rebalance", "holding period").
+1. Search 2-3 short keywords for factor definition/construction (e.g. "defined as", "ratio", "sort", "portfolio", "decile").
+2. Search 1-2 short keywords for timing/rebalancing (e.g. "lag", "rebalance", "holding period").
 3. You are done. Return final JSON. Do NOT exceed 5 total tool calls.
 
 OUTPUT RULES:

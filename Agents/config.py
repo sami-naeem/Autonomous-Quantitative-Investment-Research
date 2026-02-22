@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 #load_dotenv(dotenv_path=env_path)
 
 env_path = Path("Agents/agent.py").resolve().parent.parent / ".env"
-load_dotenv(env_path)
+load_dotenv(env_path, override=True)
 
 
 class GCSConfig:
@@ -42,7 +42,7 @@ class LLMConfig:
 
     BASE_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('BASE_MODEL_NAME', 'llama-3.1-8b')}"
     # LoRA adapters are registered by name only (no path prefix) in vLLM
-    FINLLAMA_MODEL = os.getenv('FINLLAMA_MODEL_NAME', 'finllama')
+    FINLLAMA_MODEL = f"{MODEL_BASE_PATH}/{os.getenv('FINLLAMA_MODEL_NAME', 'finllama')}"
     CUSTOM_MODEL = os.getenv('CUSTOM_MODEL_NAME', 'custom')
 
     # Model temperature
@@ -64,6 +64,19 @@ class LangSmithConfig:
     TRACING_ENABLED = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
     API_KEY = os.getenv("LANGCHAIN_API_KEY")
     PROJECT_NAME = os.getenv("LANGCHAIN_PROJECT", "autonomous-quant-research")
+
+
+class BM25Config:
+    """BM25 retrieval configuration for get_matching_content tool.
+
+    Tune these via environment variables without code changes:
+      BM25_SCORE_THRESHOLD  — minimum score to consider a chunk relevant.
+                              Lower (e.g. 0.3) = more results, higher false-positive risk.
+                              Higher (e.g. 1.0) = fewer but more precise results.
+      BM25_TOP_K            — number of top-scoring chunks to return per query.
+    """
+    SCORE_THRESHOLD: float = float(os.getenv("BM25_SCORE_THRESHOLD") or "0.5")
+    TOP_K: int = int(os.getenv("BM25_TOP_K") or "2")
 
 
 class LoggingConfig:

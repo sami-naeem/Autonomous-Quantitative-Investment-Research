@@ -122,7 +122,7 @@ def run_react_sequential_tools(
                 f"Round {round_num + 1}: Model produced {len(invalid_tcs)} invalid tool call(s). "
                 "Asking model to retry with correct format."
             )
-            messages.append(resp)
+            messages.append(AIMessage(content=getattr(resp, "content", "") or ""))
             messages.append(
                 HumanMessage(
                     content=(
@@ -137,8 +137,29 @@ def run_react_sequential_tools(
 
         if not tool_calls:
             # Check if content looks like a failed tool call missing 'name'
-            content = getattr(resp, "content", "") or ""
+            content_raw = getattr(resp, "content", "") or ""
+            has_python_tag = "<|python_tag|>" in content_raw
+            content = re.sub(r"<\|[^|>]+\|>", "", content_raw).strip()
+
             if content:
+                # <|python_tag|> in content = vLLM tool parser hit KeyError: 'name'
+                if has_python_tag:
+                    logger.warning(
+                        f"Round {round_num + 1}: Content contains <|python_tag|> — "
+                        "tool call parse failed (model omitted 'name'). Asking model to retry."
+                    )
+                    messages.append(AIMessage(content=content))
+                    messages.append(
+                        HumanMessage(
+                            content=(
+                                "Your tool call was malformed — the 'name' field is missing. Required format:\n"
+                                '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                                f"Available tools: {list(tool_map.keys())}. Try again."
+                            )
+                        )
+                    )
+                    continue
+
                 try:
                     maybe_tc = json.loads(content)
                     if isinstance(maybe_tc, dict) and "parameters" in maybe_tc and "name" not in maybe_tc:
@@ -146,7 +167,7 @@ def run_react_sequential_tools(
                             f"Round {round_num + 1}: Content looks like a tool call missing 'name'. "
                             "Asking model to retry."
                         )
-                        messages.append(resp)
+                        messages.append(AIMessage(content=content))
                         messages.append(
                             HumanMessage(
                                 content=(
@@ -160,8 +181,26 @@ def run_react_sequential_tools(
                         continue
                 except (json.JSONDecodeError, TypeError):
                     pass
+
             # No tool calls - this is the final answer
-            return _extract_json(content)
+            parsed = _extract_json(content)
+            # Guard: {"parameters": {...}} with no "name" is a failed tool call, not a final answer
+            if isinstance(parsed, dict) and "parameters" in parsed and "name" not in parsed:
+                logger.warning(
+                    f"Round {round_num + 1}: _extract_json returned a nameless tool call. Asking model to retry."
+                )
+                messages.append(AIMessage(content=content))
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "Your response is a tool call missing the 'name' field. Required format:\n"
+                            '{"name": "<tool_name>", "parameters": {<args>}}\n'
+                            f"Available tools: {list(tool_map.keys())}. Try again."
+                        )
+                    )
+                )
+                continue
+            return parsed
 
         # Process each tool call as a SEPARATE conversation turn
         # This avoids LLaMA 3's "single tool-calls at once" restriction

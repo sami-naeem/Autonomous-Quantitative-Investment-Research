@@ -29,4 +29,5 @@ notebook
 wikipedia
 trustcall
 uv
+rank-bm25
 
