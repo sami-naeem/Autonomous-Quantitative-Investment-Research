@@ -47,6 +47,8 @@ class LLMConfig:
 
     # Model temperature
     LAMBDA_TEMPERATURE = 0.7
+    LAMBDA_REQUEST_TIMEOUT = float(os.getenv("LAMBDA_REQUEST_TIMEOUT", "120"))
+    LAMBDA_MAX_RETRIES = int(os.getenv("LAMBDA_MAX_RETRIES", "1"))
 
     # Workflow-specific model assignments
     # Change this single setting to switch ALL tasks to a different model

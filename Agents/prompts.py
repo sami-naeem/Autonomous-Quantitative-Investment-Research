@@ -90,7 +90,8 @@ Do NOT use long sentences — the paper may phrase things differently.
 SEARCH PLAN (follow this order, then STOP):
 1. Search 2-3 short keywords for factor definition/construction (e.g. "defined as", "ratio", "sort", "portfolio", "decile").
 2. Search 1-2 short keywords for timing/rebalancing (e.g. "lag", "rebalance", "holding period").
-3. You are done. Return final JSON. Do NOT exceed 5 total tool calls.
+3. If details are still vague, search up to 2 additional short keywords for filters, weighting, standardization, or industry adjustments.
+4. You are done. Return final JSON. Do NOT exceed the tool-call budget from the contract above.
 
 OUTPUT RULES:
 - Return ONLY valid JSON with exactly two keys.

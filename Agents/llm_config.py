@@ -2,9 +2,23 @@
 LLM configuration and initialization module.
 Creates and configures all LLM instances used in the agent pipeline.
 """
+import httpx
+
 from langchain_openai import ChatOpenAI
 from Agents.config import LLMConfig
 from Agents.utils.tools import TOOLS
+
+
+def _build_lambda_http_client() -> httpx.Client:
+    timeout_s = max(1.0, float(LLMConfig.LAMBDA_REQUEST_TIMEOUT))
+    # Explicit transport-level timeouts protect against hangs even when model wrappers
+    # fail to propagate request_timeout consistently.
+    return httpx.Client(
+        timeout=httpx.Timeout(timeout_s, connect=min(10.0, timeout_s)),
+    )
+
+
+_LAMBDA_HTTP_CLIENT = _build_lambda_http_client()
 
 
 def get_main_llm():
@@ -28,6 +42,9 @@ def get_base_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.BASE_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        request_timeout=LLMConfig.LAMBDA_REQUEST_TIMEOUT,
+        max_retries=LLMConfig.LAMBDA_MAX_RETRIES,
+        http_client=_LAMBDA_HTTP_CLIENT,
         streaming=False,
     )
 
@@ -39,6 +56,9 @@ def get_finllama_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.FINLLAMA_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        request_timeout=LLMConfig.LAMBDA_REQUEST_TIMEOUT,
+        max_retries=LLMConfig.LAMBDA_MAX_RETRIES,
+        http_client=_LAMBDA_HTTP_CLIENT,
         streaming=False,
     )
 
@@ -50,6 +70,9 @@ def get_custom_llm():
         api_key=LLMConfig.LAMBDA_API_KEY,
         model=LLMConfig.CUSTOM_MODEL,
         temperature=LLMConfig.LAMBDA_TEMPERATURE,
+        request_timeout=LLMConfig.LAMBDA_REQUEST_TIMEOUT,
+        max_retries=LLMConfig.LAMBDA_MAX_RETRIES,
+        http_client=_LAMBDA_HTTP_CLIENT,
         streaming=False,
     )
 

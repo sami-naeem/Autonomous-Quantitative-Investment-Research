@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Callable, Dict, List
 
 _PLACEHOLDER_TOKENS = {"", "str", "string", "purpose", "computation_logic", "tbd", "<...>"}
@@ -28,6 +29,32 @@ _META_STARTS = (
     "replicate ",
     "analyze ",
 )
+_DETAIL_CUES = (
+    "rank",
+    "sort",
+    "decile",
+    "quintile",
+    "tercile",
+    "long-short",
+    "top-minus-bottom",
+    "regression",
+    "holding period",
+    "rebalance",
+    "monthly",
+    "quarterly",
+    "annual",
+    "lag",
+    "standardiz",
+    "winsoriz",
+    "value-weight",
+    "equal-weight",
+    "breakpoint",
+    "filter",
+    "exclude",
+)
+_MIN_PURPOSE_WORDS = 8
+_MIN_COMPUTATION_WORDS = 24
+_MIN_COMPUTATION_DETAIL_HITS = 3
 
 
 def _word_count(text: str) -> int:
@@ -38,6 +65,8 @@ def _is_low_information_field(text: str) -> bool:
     value = (text or "").strip().lower()
     if not value:
         return True
+    if value == "missing_or_unclear":
+        return True
     if value in _LOW_INFO_PATTERNS:
         return True
     if any(p in value for p in _META_PATTERNS):
@@ -47,10 +76,23 @@ def _is_low_information_field(text: str) -> bool:
     return _word_count(value) < 3
 
 
+def _detail_cue_hits(text: str) -> int:
+    value = (text or "").lower()
+    hits = sum(1 for cue in _DETAIL_CUES if cue in value)
+    if re.search(r"\b\d+(?:\.\d+)?(?:-\w+)?\b", value):
+        hits += 1
+    return hits
+
+
 def _is_low_information_extract(payload: Dict[str, str]) -> bool:
+    purpose = payload.get("purpose", "")
+    computation_logic = payload.get("computation_logic", "")
     return (
-        _is_low_information_field(payload.get("purpose", ""))
-        or _is_low_information_field(payload.get("computation_logic", ""))
+        _is_low_information_field(purpose)
+        or _is_low_information_field(computation_logic)
+        or _word_count(purpose) < _MIN_PURPOSE_WORDS
+        or _word_count(computation_logic) < _MIN_COMPUTATION_WORDS
+        or _detail_cue_hits(computation_logic) < _MIN_COMPUTATION_DETAIL_HITS
     )
 
 
@@ -72,7 +114,7 @@ def _snippet_score(snippet: str) -> float:
     return score
 
 
-def _compact_snippets(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> str:
+def _compact_snippets(snippets: List[str], max_items: int = 6, max_chars: int = 3500) -> str:
     best_by_text: Dict[str, float] = {}
     for s in snippets:
         text = (s or "").strip()
@@ -121,6 +163,7 @@ def fallback_factor_extract_from_snippets(
     json_parser: Callable[[str], Dict[str, Any]],
     logger: Any,
     prefetched_snippets: List[str] | None = None,
+    max_attempts: int = 3,
 ) -> Dict[str, str]:
     """Run one JSON-only extraction pass over cached/retrieved BM25 snippets."""
     queries = [
@@ -161,31 +204,122 @@ def fallback_factor_extract_from_snippets(
         f"Snippets:\n{snippets_blob}\n"
     )
 
-    try:
-        resp = llm.invoke(prompt)
-        parsed = json_parser(getattr(resp, "content", "") or "")
-        first_pass = _normalize_factor_extract(parsed)
-        if not _is_low_information_extract(first_pass):
-            return first_pass
+    best = _normalize_factor_extract({})
+    best_score = -1
+
+    for attempt_idx in range(max_attempts):
+        attempt_no = attempt_idx + 1
+        if attempt_idx == 0:
+            active_prompt = prompt
+        else:
+            active_prompt = (
+                "Your previous extraction was too generic.\n"
+                "Retry and return ONLY valid JSON with keys purpose and computation_logic.\n"
+                f"Purpose must be at least {_MIN_PURPOSE_WORDS} words.\n"
+                f"Computation logic must be at least {_MIN_COMPUTATION_WORDS} words.\n"
+                "Do not use generic responses like 'factor replication' or 'cross-sectional regression'.\n"
+                "Do not write meta-instructions (e.g., 'use evidence from snippet', 'apply the same methodology').\n"
+                "Use concrete details from snippets (e.g., variable definition, sorting/regression setup, timing).\n"
+                "Include at least three concrete implementation cues in computation_logic.\n\n"
+                f"Previous output:\n{best}\n\n"
+                f"Theme pick:\n{theme_pick}\n\n"
+                f"Abstract:\n{abstract}\n\n"
+                f"Snippets:\n{snippets_blob}\n"
+            )
+
+        logger.info(f"Fallback extraction attempt {attempt_no}/{max_attempts} starting.")
+        t0 = time.perf_counter()
+        try:
+            resp = llm.invoke(active_prompt)
+            parsed = json_parser(getattr(resp, "content", "") or "")
+            candidate = _normalize_factor_extract(parsed)
+        except Exception as e:
+            logger.warning(
+                f"Fallback extraction attempt {attempt_no}/{max_attempts} failed after "
+                f"{time.perf_counter() - t0:.2f}s: {type(e).__name__}: {e}"
+            )
+            continue
+
+        elapsed = time.perf_counter() - t0
+        logger.info(f"Fallback extraction attempt {attempt_no}/{max_attempts} completed in {elapsed:.2f}s.")
+
+        candidate_score = _word_count(candidate.get("purpose", "")) + _word_count(candidate.get("computation_logic", ""))
+        if candidate_score > best_score:
+            best = candidate
+            best_score = candidate_score
+
+        if not _is_low_information_extract(candidate):
+            return candidate
 
         logger.warning(
-            "Fallback extraction produced low-information output. Retrying once with stricter requirements."
+            f"Fallback extraction attempt {attempt_no}/{max_attempts} produced low-information output."
         )
-        strict_prompt = (
-            "Your previous extraction was too generic.\n"
-            "Retry and return ONLY valid JSON with keys purpose and computation_logic.\n"
-            "Each field must be at least 3 words.\n"
-            "Do not use generic responses like 'factor replication' or 'cross-sectional regression'.\n"
-            "Do not write meta-instructions (e.g., 'use evidence from snippet', 'apply the same methodology').\n"
-            "Use concrete details from snippets (e.g., variable definition, sorting/regression setup, timing).\n\n"
-            f"Previous output:\n{first_pass}\n\n"
-            f"Theme pick:\n{theme_pick}\n\n"
-            f"Abstract:\n{abstract}\n\n"
-            f"Snippets:\n{snippets_blob}\n"
-        )
-        resp2 = llm.invoke(strict_prompt)
-        parsed2 = json_parser(getattr(resp2, "content", "") or "")
-        return _normalize_factor_extract(parsed2)
-    except Exception as e:
-        logger.warning(f"Fallback extraction call failed: {type(e).__name__}: {e}")
-        return _normalize_factor_extract({})
+
+    return best
+
+
+def heuristic_factor_extract_from_snippets(
+    *,
+    abstract: str,
+    snippets: List[str],
+) -> Dict[str, str]:
+    """Deterministic extraction fallback that does not call an LLM."""
+    cleaned_snippets: List[str] = []
+    for raw in snippets or []:
+        text = re.sub(r"^\[(?:MATCH[^\]]*|CONTEXT)\]\s*", "", str(raw or "").strip())
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text or text.startswith("No relevant content found"):
+            continue
+        cleaned_snippets.append(text)
+
+    def _pick_sentences(text: str, max_sentences: int = 2) -> List[str]:
+        parts = re.split(r"(?<=[.!?])\s+", text or "")
+        out = []
+        for p in parts:
+            p = p.strip()
+            if _word_count(p) < 6:
+                continue
+            out.append(p)
+            if len(out) >= max_sentences:
+                break
+        return out
+
+    abstract_sentences = _pick_sentences(abstract, max_sentences=2)
+    purpose = " ".join(abstract_sentences).strip()
+
+    if _word_count(purpose) < _MIN_PURPOSE_WORDS:
+        for s in cleaned_snippets:
+            snippet_sentences = _pick_sentences(s, max_sentences=2)
+            candidate = " ".join(snippet_sentences).strip()
+            if _word_count(candidate) >= _MIN_PURPOSE_WORDS:
+                purpose = candidate
+                break
+
+    detail_candidates: List[tuple[int, str]] = []
+    for s in cleaned_snippets:
+        score = _detail_cue_hits(s)
+        if score <= 0:
+            continue
+        detail_candidates.append((score, s))
+
+    detail_candidates.sort(key=lambda x: x[0], reverse=True)
+    comp_parts: List[str] = []
+    for _, text in detail_candidates[:3]:
+        for sentence in _pick_sentences(text, max_sentences=2):
+            comp_parts.append(sentence)
+            if len(comp_parts) >= 4:
+                break
+        if len(comp_parts) >= 4:
+            break
+
+    if not comp_parts and cleaned_snippets:
+        comp_parts = _pick_sentences(" ".join(cleaned_snippets[:2]), max_sentences=3)
+
+    computation_logic = " ".join(comp_parts).strip()
+    result = _normalize_factor_extract(
+        {
+            "purpose": purpose,
+            "computation_logic": computation_logic,
+        }
+    )
+    return result

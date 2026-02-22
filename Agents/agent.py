@@ -38,7 +38,10 @@ from Agents.prompts import (
     build_system_prompt,
 )
 from Agents.paper_retrieval import chunk_academic_markdown, normalize_for_bm25
-from Agents.factor_extract_fallback import fallback_factor_extract_from_snippets
+from Agents.factor_extract_fallback import (
+    fallback_factor_extract_from_snippets,
+    heuristic_factor_extract_from_snippets,
+)
 
 logging.basicConfig(
     level=LoggingConfig.LEVEL,
@@ -529,7 +532,7 @@ def _retrieved_snippet_score(snippet: str) -> float:
     return score
 
 
-def _rank_snippets(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> List[str]:
+def _rank_snippets(snippets: List[str], max_items: int = 6, max_chars: int = 3500) -> List[str]:
     best_by_text: Dict[str, float] = {}
     for raw in snippets:
         text = str(raw or "").strip()
@@ -553,7 +556,7 @@ def _rank_snippets(snippets: List[str], max_items: int = 8, max_chars: int = 600
     return out
 
 
-def _cached_evidence_blob(snippets: List[str], max_items: int = 8, max_chars: int = 6000) -> str:
+def _cached_evidence_blob(snippets: List[str], max_items: int = 6, max_chars: int = 3500) -> str:
     picked = _rank_snippets(snippets, max_items=max_items, max_chars=max_chars)
     return "\n\n---\n\n".join(picked)
 
@@ -595,6 +598,7 @@ def _run_react_json_agent(
     ]
 
     total_tool_calls = 0
+    no_new_evidence_streak = 0
     json_retry_used = False
     last_content = ""
 
@@ -614,7 +618,14 @@ def _run_react_json_agent(
 
     for round_num in range(max_rounds):
         tools_available = total_tool_calls < max_total_tool_calls
-        resp = (llm_with_tools if tools_available else llm).invoke(messages)
+        try:
+            resp = (llm_with_tools if tools_available else llm).invoke(messages)
+        except Exception as e:
+            logger.warning(
+                f"Round {round_num + 1}: LLM invoke failed ({type(e).__name__}: {e}). "
+                "Falling back to forced final JSON path."
+            )
+            break
 
         finish_reason = (
             (getattr(resp, "response_metadata", None) or {}).get("finish_reason")
@@ -668,9 +679,17 @@ def _run_react_json_agent(
 
                 if name not in tool_map:
                     logger.warning(f"Round {round_num + 1}: Unknown tool '{name}'.")
-                    messages.append(resp)
+                    # Never append raw tool-call responses here: some vLLM endpoints
+                    # reject history that contains assistant messages with multiple
+                    # tool_calls. Keep only plain text content and re-instruct.
+                    messages.append(AIMessage(content=getattr(resp, "content", "") or ""))
                     messages.append(
-                        HumanMessage(content=f"Tool '{name}' does not exist. Available tools: {list(tool_map.keys())}.")
+                        HumanMessage(
+                            content=(
+                                f"Tool '{name}' does not exist. Available tools: {list(tool_map.keys())}. "
+                                "Use exactly one valid tool call at a time, or return final JSON."
+                            )
+                        )
                     )
                     break
 
@@ -710,11 +729,31 @@ def _run_react_json_agent(
                     result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
 
                 total_tool_calls += 1
-                retrieved_snippets.extend(_collect_retrieval_snippets(name, result))
+                new_snippets = _collect_retrieval_snippets(name, result)
+                if new_snippets:
+                    retrieved_snippets.extend(new_snippets)
+                    no_new_evidence_streak = 0
+                elif name == "get_matching_content":
+                    no_new_evidence_streak += 1
+                    logger.info(
+                        f"Round {round_num + 1}: query returned no new retrieval evidence "
+                        f"(streak={no_new_evidence_streak})."
+                    )
 
                 messages.append(
                     ToolMessage(content=sanitize_tool_result(result, name), tool_call_id=tool_id)
                 )
+
+                if name == "get_matching_content" and no_new_evidence_streak >= 2:
+                    logger.warning(
+                        f"Round {round_num + 1}: {no_new_evidence_streak} consecutive retrieval calls "
+                        "returned no new evidence. Forcing final JSON with cached evidence."
+                    )
+                    _push_cached_evidence_finalization(
+                        "Recent retrieval queries returned no new evidence."
+                    )
+                    budget_exhausted_mid_round = True
+                    break
 
             if total_tool_calls >= max_total_tool_calls:
                 logger.warning(
@@ -832,7 +871,16 @@ def _run_react_json_agent(
                             tool_result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
 
                         total_tool_calls += 1
-                        retrieved_snippets.extend(_collect_retrieval_snippets(tc_name, tool_result))
+                        new_snippets = _collect_retrieval_snippets(tc_name, tool_result)
+                        if new_snippets:
+                            retrieved_snippets.extend(new_snippets)
+                            no_new_evidence_streak = 0
+                        elif tc_name == "get_matching_content":
+                            no_new_evidence_streak += 1
+                            logger.info(
+                                f"Round {round_num + 1}: text-embedded query returned no new "
+                                f"retrieval evidence (streak={no_new_evidence_streak})."
+                            )
 
                         messages.append(
                             HumanMessage(
@@ -848,6 +896,14 @@ def _run_react_json_agent(
                                 "Next round will force final JSON using cached evidence."
                             )
                             _push_cached_evidence_finalization("Tool budget is exhausted.")
+                        if tc_name == "get_matching_content" and no_new_evidence_streak >= 2:
+                            logger.warning(
+                                f"Round {round_num + 1}: {no_new_evidence_streak} consecutive text-embedded "
+                                "retrieval calls returned no new evidence. Forcing final JSON with cached evidence."
+                            )
+                            _push_cached_evidence_finalization(
+                                "Recent retrieval queries returned no new evidence."
+                            )
                         continue
 
                     if not tools_available:
@@ -898,7 +954,19 @@ def _run_react_json_agent(
             )
         )
     )
-    resp = llm.invoke(messages)
+    try:
+        resp = llm.invoke(messages)
+    except Exception as e:
+        logger.warning(
+            f"Forced final JSON invoke failed ({type(e).__name__}: {e}). "
+            "Returning empty JSON for caller-level fallback."
+        )
+        if last_content:
+            try:
+                return _extract_json(last_content)
+            except ValueError:
+                pass
+        return {}
     content = getattr(resp, "content", "") or ""
     try:
         return _extract_json(content)
@@ -986,6 +1054,32 @@ _META_STARTS = (
     "replicate ",
     "analyze ",
 )
+_DETAIL_CUES = (
+    "rank",
+    "sort",
+    "decile",
+    "quintile",
+    "tercile",
+    "long-short",
+    "top-minus-bottom",
+    "regression",
+    "holding period",
+    "rebalance",
+    "monthly",
+    "quarterly",
+    "annual",
+    "lag",
+    "standardiz",
+    "winsoriz",
+    "value-weight",
+    "equal-weight",
+    "breakpoint",
+    "filter",
+    "exclude",
+)
+_MIN_PURPOSE_WORDS = 8
+_MIN_COMPUTATION_WORDS = 24
+_MIN_COMPUTATION_DETAIL_HITS = 3
 
 
 def _word_count(text: str) -> int:
@@ -996,6 +1090,8 @@ def _is_low_information_field(text: str) -> bool:
     value = (text or "").strip().lower()
     if not value:
         return True
+    if value == "missing_or_unclear":
+        return True
     if value in _LOW_INFO_PATTERNS:
         return True
     if any(p in value for p in _META_PATTERNS):
@@ -1003,6 +1099,38 @@ def _is_low_information_field(text: str) -> bool:
     if value.startswith(_META_STARTS) and ("snippet" in value or "paper" in value):
         return True
     return _word_count(value) < 3
+
+
+def _detail_cue_hits(text: str) -> int:
+    value = (text or "").lower()
+    hits = sum(1 for cue in _DETAIL_CUES if cue in value)
+    if re.search(r"\b\d+(?:\.\d+)?(?:-\w+)?\b", value):
+        hits += 1
+    return hits
+
+
+def _is_low_information_extract(payload: Dict[str, str]) -> bool:
+    purpose = payload.get("purpose", "")
+    computation_logic = payload.get("computation_logic", "")
+    if _is_low_information_field(purpose) or _is_low_information_field(computation_logic):
+        return True
+    if _word_count(purpose) < _MIN_PURPOSE_WORDS:
+        return True
+    if _word_count(computation_logic) < _MIN_COMPUTATION_WORDS:
+        return True
+    if _detail_cue_hits(computation_logic) < _MIN_COMPUTATION_DETAIL_HITS:
+        return True
+    return False
+
+
+def _factor_extract_quality_score(payload: Dict[str, str]) -> float:
+    purpose = payload.get("purpose", "")
+    computation_logic = payload.get("computation_logic", "")
+    return (
+        (0.5 * _word_count(purpose))
+        + _word_count(computation_logic)
+        + (2.5 * _detail_cue_hits(computation_logic))
+    )
 
 
 def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
@@ -1113,44 +1241,92 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
         "abstract": abstract,
     }
 
-    prompt = build_system_prompt(AGENT2_EXTRACT_PROMPT, max_tool_calls=5, abstract=abstract)
+    retrieved_snippets: List[str] = []
+    used_queries: Set[str] = set()
+    factor_extract = _normalize_factor_extract({})
 
     try:
-        retrieved_snippets: List[str] = []
-        used_queries: Set[str] = set()
-        raw_factor_extract = _run_react_json_agent(
-            llm=llm,
-            system_prompt=prompt,
-            user_payload=payload,
-            tools=[get_matching_content],
-            max_rounds=7,
-            max_tool_calls_per_round=2,
-            max_total_tool_calls=5,
-            retrieved_snippets=retrieved_snippets,
-            used_queries=used_queries,
+        attempt_plans = (
+            [(6, 6), (8, 7)]
+            if model_choice == "custom"
+            else [(8, 8), (12, 9)]
         )
+        best_factor_extract = _normalize_factor_extract({})
+        best_quality_score = -1.0
+
+        for attempt_idx, (budget, rounds) in enumerate(attempt_plans, start=1):
+            attempt_prompt = build_system_prompt(
+                AGENT2_EXTRACT_PROMPT,
+                max_tool_calls=budget,
+                abstract=abstract,
+            )
+            if attempt_idx > 1:
+                attempt_prompt += (
+                    "\n\nRETRY REQUIREMENTS:\n"
+                    "- Previous output was too generic.\n"
+                    "- Include concrete implementation details in computation_logic, "
+                    "including ranking/regression setup, timing/holding period, and portfolio construction when present.\n"
+                    "- Do not summarize at a high level."
+                )
+
+            try:
+                raw_factor_extract = _run_react_json_agent(
+                    llm=llm,
+                    system_prompt=attempt_prompt,
+                    user_payload=payload,
+                    tools=[get_matching_content],
+                    max_rounds=rounds,
+                    max_tool_calls_per_round=2,
+                    max_total_tool_calls=budget,
+                    retrieved_snippets=retrieved_snippets,
+                    used_queries=used_queries,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Agent 2 attempt {attempt_idx}/{len(attempt_plans)} failed "
+                    f"(budget={budget}, rounds={rounds}): {type(e).__name__}: {e}"
+                )
+                continue
+
+            if not isinstance(raw_factor_extract, dict):
+                raw_factor_extract = {}
+
+            # Hard schema guard: prevent leaked tool-call payloads from being persisted.
+            if any(k in raw_factor_extract for k in ("name", "parameters", "args", "arguments")):
+                logger.warning("Agent 2 returned tool-call shaped JSON as final output. Coercing to empty schema.")
+                raw_factor_extract = {}
+
+            candidate = _normalize_factor_extract(raw_factor_extract)
+            quality_score = _factor_extract_quality_score(candidate)
+            if quality_score > best_quality_score:
+                best_factor_extract = candidate
+                best_quality_score = quality_score
+
+            if not _is_low_information_extract(candidate):
+                factor_extract = candidate
+                break
+
+            if attempt_idx < len(attempt_plans):
+                logger.warning(
+                    f"Agent 2 attempt {attempt_idx}/{len(attempt_plans)} was low-information "
+                    f"(budget={budget}). Retrying with a larger budget."
+                )
+            else:
+                logger.warning(
+                    f"Agent 2 attempt {attempt_idx}/{len(attempt_plans)} was low-information "
+                    f"(budget={budget}). Proceeding to fallback extraction."
+                )
+        else:
+            factor_extract = best_factor_extract
+
         if retrieved_snippets:
             logger.info(
                 f"Agent 2 cached {len(retrieved_snippets)} retrieval snippets "
                 f"from {len(used_queries)} unique queries."
             )
-        if not isinstance(raw_factor_extract, dict):
-            raw_factor_extract = {}
-
-        # Hard schema guard: prevent leaked tool-call payloads from being persisted.
-        if any(k in raw_factor_extract for k in ("name", "parameters", "args", "arguments")):
-            logger.warning("Agent 2 returned tool-call shaped JSON as final output. Coercing to empty schema.")
-            raw_factor_extract = {}
-
-        factor_extract = _normalize_factor_extract(raw_factor_extract)
 
         # Fallback path: if either field is still unclear, synthesize from cached evidence.
-        if (
-            factor_extract.get("purpose") == "missing_or_unclear"
-            or factor_extract.get("computation_logic") == "missing_or_unclear"
-            or _is_low_information_field(factor_extract.get("purpose", ""))
-            or _is_low_information_field(factor_extract.get("computation_logic", ""))
-        ):
+        if _is_low_information_extract(factor_extract):
             logger.warning("Agent 2 output incomplete or low-information. Running snippet-based fallback extraction.")
             fallback_extract = fallback_factor_extract_from_snippets(
                 llm=llm,
@@ -1160,29 +1336,51 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
                 json_parser=_extract_json,
                 logger=logger,
                 prefetched_snippets=retrieved_snippets,
+                max_attempts=3,
             )
             fallback_extract = _normalize_factor_extract(fallback_extract)
             factor_extract = {
                 "purpose": (
                     fallback_extract["purpose"]
                     if (
-                        factor_extract.get("purpose") == "missing_or_unclear"
-                        or _is_low_information_field(factor_extract.get("purpose", ""))
+                        _is_low_information_field(factor_extract.get("purpose", ""))
+                        or _word_count(factor_extract.get("purpose", "")) < _word_count(fallback_extract.get("purpose", ""))
                     )
                     else factor_extract.get("purpose", "missing_or_unclear")
                 ),
                 "computation_logic": (
                     fallback_extract["computation_logic"]
                     if (
-                        factor_extract.get("computation_logic") == "missing_or_unclear"
-                        or _is_low_information_field(factor_extract.get("computation_logic", ""))
+                        _is_low_information_field(factor_extract.get("computation_logic", ""))
+                        or _factor_extract_quality_score({
+                            "purpose": factor_extract.get("purpose", ""),
+                            "computation_logic": factor_extract.get("computation_logic", ""),
+                        }) < _factor_extract_quality_score({
+                            "purpose": fallback_extract.get("purpose", ""),
+                            "computation_logic": fallback_extract.get("computation_logic", ""),
+                        })
                     )
                     else factor_extract.get("computation_logic", "missing_or_unclear")
                 ),
             }
+
+        # Deterministic safety net: avoid all-missing outputs when LLM fallback times out.
+        if _is_low_information_extract(factor_extract):
+            heuristic_extract = heuristic_factor_extract_from_snippets(
+                abstract=abstract,
+                snippets=retrieved_snippets,
+            )
+            heuristic_extract = _normalize_factor_extract(heuristic_extract)
+            if not _is_low_information_extract(heuristic_extract):
+                logger.warning("Agent 2 using heuristic snippet fallback after low-information LLM output.")
+                factor_extract = heuristic_extract
     except Exception as e:
         logger.error(f"Factor extraction failed: {e}")
-        factor_extract = _normalize_factor_extract({})
+        heuristic_extract = heuristic_factor_extract_from_snippets(
+            abstract=abstract,
+            snippets=retrieved_snippets,
+        )
+        factor_extract = _normalize_factor_extract(heuristic_extract)
 
     _log_agent_output("Agent 2 (factor_extract)", factor_extract)
 
