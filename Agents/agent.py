@@ -697,34 +697,65 @@ def _run_react_json_agent(
                     )
                 )
                 continue
-
-            if isinstance(parsed, dict) and tools_available:
+            if isinstance(parsed, dict):
                 tc_name = parsed.get("name")
                 tc_params = parsed.get("parameters") or parsed.get("args") or parsed.get("arguments")
-                if tc_name in tool_map and tc_params is not None:
-                    logger.info(
-                        f"Round {round_num + 1}: Text-embedded tool call detected for '{tc_name}'. Executing."
+                has_text_tool_shape = isinstance(tc_name, str) and (tc_params is not None)
+
+                if has_text_tool_shape:
+                    if tc_name in tool_map and tools_available:
+                        logger.info(
+                            f"Round {round_num + 1}: Text-embedded tool call detected for '{tc_name}'. Executing."
+                        )
+                        total_tool_calls += 1
+                        tc_params_coerced = _coerce_tool_args(tc_params) if isinstance(tc_params, dict) else {}
+                        try:
+                            tool_result = tool_map[tc_name].invoke(tc_params_coerced)
+                        except Exception as e:
+                            logger.warning(f"Tool '{tc_name}' raised {type(e).__name__}: {e}")
+                            tool_result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
+                        messages.append(
+                            HumanMessage(
+                                content=(
+                                    f"Tool result for '{tc_name}':\n"
+                                    + sanitize_tool_result(tool_result, tc_name)
+                                )
+                            )
+                        )
+                        if total_tool_calls >= max_total_tool_calls:
+                            logger.warning(
+                                f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
+                                "Next round will force final JSON (tools disabled)."
+                            )
+                        continue
+
+                    if not tools_available:
+                        logger.warning(
+                            f"Round {round_num + 1}: Model returned a tool call after tool budget exhaustion. "
+                            "Requesting final JSON without tools."
+                        )
+                        messages.append(
+                            HumanMessage(
+                                content=(
+                                    "Tool budget is exhausted. Do not call tools again. "
+                                    "Return ONLY the final JSON object matching the schema, using evidence already gathered."
+                                )
+                            )
+                        )
+                        continue
+
+                    logger.warning(
+                        f"Round {round_num + 1}: Text-embedded unknown tool '{tc_name}'. "
+                        f"Available tools: {list(tool_map.keys())}"
                     )
-                    total_tool_calls += 1
-                    tc_params_coerced = _coerce_tool_args(tc_params) if isinstance(tc_params, dict) else {}
-                    try:
-                        tool_result = tool_map[tc_name].invoke(tc_params_coerced)
-                    except Exception as e:
-                        logger.warning(f"Tool '{tc_name}' raised {type(e).__name__}: {e}")
-                        tool_result = f"Tool error: {type(e).__name__}: {str(e)[:200]}"
                     messages.append(
                         HumanMessage(
                             content=(
-                                f"Tool result for '{tc_name}':\n"
-                                + sanitize_tool_result(tool_result, tc_name)
+                                f"Tool '{tc_name}' does not exist. Available tools: {list(tool_map.keys())}. "
+                                "Use a valid tool or return final JSON."
                             )
                         )
                     )
-                    if total_tool_calls >= max_total_tool_calls:
-                        logger.warning(
-                            f"Tool budget exhausted ({total_tool_calls}/{max_total_tool_calls}). "
-                            "Next round will force final JSON (tools disabled)."
-                        )
                     continue
 
             return parsed
@@ -878,8 +909,18 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
             max_tool_calls_per_round=2,
             max_total_tool_calls=5,
         )
-        factor_extract.setdefault("purpose", "")
-        factor_extract.setdefault("computation_logic", "")
+        if not isinstance(factor_extract, dict):
+            factor_extract = {}
+
+        # Hard schema guard: prevent leaked tool-call payloads from being persisted.
+        if any(k in factor_extract for k in ("name", "parameters", "args", "arguments")):
+            logger.warning("Agent 2 returned tool-call shaped JSON as final output. Coercing to empty schema.")
+            factor_extract = {"purpose": "", "computation_logic": ""}
+        else:
+            factor_extract = {
+                "purpose": str(factor_extract.get("purpose", "") or ""),
+                "computation_logic": str(factor_extract.get("computation_logic", "") or ""),
+            }
     except Exception as e:
         logger.error(f"Factor extraction failed: {e}")
         factor_extract = {
