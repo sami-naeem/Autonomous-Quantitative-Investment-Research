@@ -269,6 +269,7 @@ else
         Sandbox/ \
         langgraph.json \
         requirements.txt \
+        run_code_replication.py \
         endpoints \
         .env.example
 fi
