@@ -1086,6 +1086,9 @@ def _word_count(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9]+", text or ""))
 
 
+_HTML_TAG_RE = re.compile(r"<(?:table|tr|td|th|div|span|p|br)[^>]*>", re.IGNORECASE)
+
+
 def _is_low_information_field(text: str) -> bool:
     value = (text or "").strip().lower()
     if not value:
@@ -1097,6 +1100,9 @@ def _is_low_information_field(text: str) -> bool:
     if any(p in value for p in _META_PATTERNS):
         return True
     if value.startswith(_META_STARTS) and ("snippet" in value or "paper" in value):
+        return True
+    # Raw HTML table markup pasted verbatim by the model is not useful prose
+    if _HTML_TAG_RE.search(value):
         return True
     return _word_count(value) < 3
 
@@ -1140,6 +1146,9 @@ def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
 
     def _clean(value: Any) -> str:
         text = str(value or "").strip()
+        # Strip HTML markup that small models sometimes copy verbatim from paper tables
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r" {2,}", " ", text).strip()
         if text.lower() in _PLACEHOLDER_TOKENS:
             return "missing_or_unclear"
         return text or "missing_or_unclear"

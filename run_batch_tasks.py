@@ -6,6 +6,7 @@ Run from project root: python run_batch_tasks.py
 import argparse
 import json
 import logging
+import re
 from pathlib import Path
 from google.cloud import storage
 from sympy import python
@@ -17,6 +18,38 @@ logger = logging.getLogger(__name__)
 
 LOCAL_RESULTS = Path("results/")
 LOCAL_RESULTS.mkdir(exist_ok=True)
+
+
+class AgentOutputColorFormatter(logging.Formatter):
+    RESET = "\x1b[0m"
+    AGENT1 = "\x1b[96m"
+    AGENT2 = "\x1b[93m"
+    _AGENT1_PATTERN = re.compile(r"\bAgent\s*1\b", re.IGNORECASE)
+    _AGENT2_PATTERN = re.compile(r"\bAgent\s*2\b", re.IGNORECASE)
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+        if self._AGENT1_PATTERN.search(message):
+            return f"{self.AGENT1}{message}{self.RESET}"
+        if self._AGENT2_PATTERN.search(message):
+            return f"{self.AGENT2}{message}{self.RESET}"
+        return message
+
+
+def configure_colored_logging() -> None:
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(level=logging.INFO)
+
+    for handler in root_logger.handlers:
+        existing_formatter = handler.formatter
+        fmt = (
+            existing_formatter._fmt
+            if existing_formatter and getattr(existing_formatter, "_fmt", None)
+            else "%(levelname)s:%(name)s:%(message)s"
+        )
+        datefmt = existing_formatter.datefmt if existing_formatter else None
+        handler.setFormatter(AgentOutputColorFormatter(fmt=fmt, datefmt=datefmt))
 
 
 def get_gcs_client() -> storage.Client:
@@ -117,7 +150,7 @@ def run_all(model_choice: str = "base", start_index: int = 0):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_colored_logging()
 
     parser = argparse.ArgumentParser(description="Batch paper pipeline runner")
     parser.add_argument(

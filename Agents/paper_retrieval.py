@@ -6,10 +6,18 @@ import re
 from typing import List
 
 
+def _strip_html_tags(text: str) -> str:
+    """Remove HTML tags from text, collapsing runs of whitespace left behind."""
+    stripped = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r" {2,}", " ", stripped).strip()
+
+
 def chunk_academic_markdown(text: str) -> List[str]:
     """Split paper markdown into paragraph-level chunks.
 
-    Equations and inline math are preserved in chunk text so downstream
+    HTML table markup (common in PDF-to-markdown output) is stripped before
+    storing chunks so BM25 snippets returned to the model contain plain text
+    only.  Equations and inline math are preserved in chunk text so downstream
     replication logic can inspect original formulas.
     """
     raw_chunks = re.split(r"\n{2,}", text)
@@ -25,6 +33,8 @@ def chunk_academic_markdown(text: str) -> List[str]:
             continue
         full = header_buffer + chunk
         header_buffer = ""
+        # Strip HTML markup that PDF converters embed as tables/spans
+        full = _strip_html_tags(full)
         if len(full) > 80:
             chunks.append(full)
 
