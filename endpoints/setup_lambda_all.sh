@@ -343,6 +343,7 @@ docker run -d --name vllm-server \\
     ${MODEL_FLAG}/models/${FINLLAMA_MODEL_NAME} \\
     --host 0.0.0.0 --port ${PORT} \\
     --api-key "${API_KEY}" \\
+    --served-model-name finllama \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
     --max-model-len 65536 \\
