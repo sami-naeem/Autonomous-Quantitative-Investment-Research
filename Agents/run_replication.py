@@ -536,14 +536,55 @@ SYSTEM_MSG = (
 def _get_llm(model_choice: str = DEFAULT_MODEL):
     """Return a LangChain-compatible LLM with .invoke().
 
-    Resolution: Agents.llm_config → langchain-anthropic fallback.
+    Explicit options:
+      - claude  -> Anthropic API (langchain-anthropic)
+      - openai  -> OpenAI API (langchain-openai)
+    Otherwise:
+      - Agents.llm_config.get_llm_by_name(model_choice)
+      - fallback to Claude if available
     """
+    choice = str(model_choice).lower()
+
+    # 1) Explicit Claude selection
+    if choice == "claude":
+        try:
+            from langchain_anthropic import ChatAnthropic
+            return ChatAnthropic(
+                model="claude-sonnet-4-20250514",
+                temperature=0.2,
+                max_tokens=8192,
+            )
+        except ImportError as e:
+            raise RuntimeError(
+                "model_choice='claude' requires langchain-anthropic. "
+                "Install it (pip install langchain-anthropic) and set ANTHROPIC_API_KEY."
+            ) from e
+
+    # 2) Explicit OpenAI selection
+    if choice == "openai":
+        try:
+            from langchain_openai import ChatOpenAI
+            # Uses OPENAI_API_KEY by default; optionally set OPENAI_MODEL in env
+            import os
+            return ChatOpenAI(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.2")),
+                max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "8192")),
+            )
+        except ImportError as e:
+            raise RuntimeError(
+                "model_choice='openai' requires langchain-openai. "
+                "Install it (pip install langchain-openai) and set OPENAI_API_KEY."
+            ) from e
+
+    # 3) Repo-defined LLMs (base/finllama/custom, etc.)
     if get_llm_by_name is not None:
         try:
             return get_llm_by_name(model_choice)
         except Exception as e:
             logger.warning(f"get_llm_by_name('{model_choice}') failed: {e}")
 
+    # 4) Fallback to Claude only when NOT explicitly requested
     try:
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(
@@ -555,10 +596,9 @@ def _get_llm(model_choice: str = DEFAULT_MODEL):
         pass
 
     raise RuntimeError(
-        "No LLM backend available. Install langchain-anthropic or ensure "
-        "Agents.llm_config is importable."
+        "No LLM backend available. Install langchain-anthropic or langchain-openai, "
+        "or ensure Agents.llm_config is importable."
     )
-
 
 def _strip_fences(text: str) -> str:
     """Remove ```python ... ``` wrappers if present."""
@@ -628,10 +668,10 @@ def run_sandbox(
     uploaded to GCS by save_outputs() after execution completes.
     """
     try:
-        from sandbox_executor_retry import SandboxExecutor
+        from .sandbox_executor_retry import SandboxExecutor
     except ImportError:
         try:
-            from sandbox_executor import SandboxExecutor
+            from .sandbox_executor import SandboxExecutor
         except ImportError:
             raise ImportError(
                 "Cannot import SandboxExecutor. Ensure sandbox_executor_retry.py "
@@ -959,7 +999,8 @@ def list_papers_with_upstream(model_filter: Optional[str] = None) -> List[str]:
 
     try:
         bucket = client.bucket(OUTPUT_BUCKET)
-        blobs = bucket.list_blobs(prefix=UPSTREAM_PREFIX, delimiter="/")
+        blobs = bucket.list_blobs(prefix="", delimiter="/")
+        _ = [blob.name for blob in blobs] # Trigger the API call to populate blobs.prefixes
         for prefix_str in blobs.prefixes:
             folder = prefix_str.rstrip("/")
             # Skip our own replication output folder
@@ -984,6 +1025,7 @@ def list_papers_with_upstream(model_filter: Optional[str] = None) -> List[str]:
 def process_single(
     paper_name: str,
     model_choice: str = DEFAULT_MODEL,
+    upstream_model_choice: str = DEFAULT_MODEL,
     max_retries: int = DEFAULT_MAX_RETRIES,
     timeout: int = DEFAULT_TIMEOUT,
     dry_run: bool = False,
@@ -992,11 +1034,11 @@ def process_single(
 ) -> Dict[str, Any]:
     """Process one paper end-to-end."""
     logger.info("=" * 70)
-    logger.info(f"Processing: {paper_name}  (model={model_choice})")
+    logger.info(f"Processing: {paper_name}  (model={upstream_model_choice})")
     logger.info("=" * 70)
 
     # ── Load upstream ────────────────────────────────────────────────
-    upstream = load_inputs(paper_name, model_choice=model_choice)
+    upstream = load_inputs(paper_name, model_choice=upstream_model_choice)
     tp = upstream.get("theme_pick", {})
     fe = upstream.get("factor_extract", {})
     logger.info(f"  theme:   {tp.get('theme', '?')} (conf={tp.get('confidence', '?')})")
@@ -1110,9 +1152,15 @@ def main():
     )
     parser.add_argument(
         "--model",
-        choices=["openai", "base", "finllama", "custom"],
+        choices=["openai", "base", "finllama", "custom", "claude"],
         default=DEFAULT_MODEL,
         help=f"LLM for generation + sandbox fixing (default: {DEFAULT_MODEL}).",
+    )
+    parser.add_argument(
+        "--upstream-model",
+        choices=["openai", "base", "finllama", "custom"],
+        default=None,
+        help="Which upstream folder to read JSON from (paper/<upstream-model>/...). Defaults to --model if not set.",
     )
     parser.add_argument(
         "--max-retries", type=int, default=DEFAULT_MAX_RETRIES,
@@ -1138,6 +1186,9 @@ def main():
                         help="List papers with upstream outputs.")
     args = parser.parse_args()
 
+    upstream_model = args.upstream_model or args.model # use upstream_model if provided else the model
+    # now upstream_model will be used to filter out data from upstream and the model will be used for generation
+    
     if args.list_papers:
         papers = list_papers_with_upstream(model_filter=args.model)
         print(f"\nPapers with upstream outputs ({len(papers)}, model={args.model}):\n")
@@ -1150,7 +1201,7 @@ def main():
 
     if args.paper:
         result = process_single(
-            args.paper, model_choice=args.model,
+            args.paper, upstream_model_choice=upstream_model, model_choice=args.model,
             max_retries=args.max_retries, timeout=args.timeout,
             dry_run=args.dry_run, prompt_only=args.prompt_only,
             data_dir=args.data_dir,

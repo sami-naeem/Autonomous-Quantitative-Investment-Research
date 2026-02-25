@@ -123,7 +123,8 @@ echo "[3/13] Installing uv and creating virtual environment..."
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
-uv venv --system-site-packages ~/vllm_env
+# uv venv --system-site-packages ~/vllm_env
+uv venv -p python3.12.12 ~/vllm_env
 source ~/vllm_env/bin/activate
 
 # --- Step 4: Python dependencies ---
@@ -169,7 +170,29 @@ mkdir -p ~/scripts
 # --- Step 7: Download base model ---
 echo ""
 echo "[7/13] Downloading base model: $BASE_MODEL_REPO..."
-python -c "from huggingface_hub import snapshot_download; snapshot_download('$BASE_MODEL_REPO', local_dir='$HOME/models/${BASE_MODEL_NAME}')"
+
+# Safer Hugging Face download (resume + single worker)
+export HF_HUB_ENABLE_HF_TRANSFER=0
+
+python - <<'PY'
+from huggingface_hub import snapshot_download
+import os
+
+repo = os.environ["BASE_MODEL_REPO"]
+name = os.environ["BASE_MODEL_NAME"]
+local_dir = os.path.expanduser(f'~/models/{name}')
+
+snapshot_download(
+    repo_id=repo,
+    local_dir=local_dir,
+    resume_download=True,
+    max_workers=1,
+    local_dir_use_symlinks=False,
+)
+print("Done:", local_dir)
+PY
+
+# python -c "from huggingface_hub import snapshot_download; snapshot_download('$BASE_MODEL_REPO', local_dir='$HOME/models/${BASE_MODEL_NAME}')"
 
 # --- Step 8: Download Fino1-8B (finllama) ---
 echo ""
