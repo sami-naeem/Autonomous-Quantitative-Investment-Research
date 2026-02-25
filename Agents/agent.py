@@ -1159,6 +1159,67 @@ def _normalize_factor_extract(payload: Any) -> Dict[str, str]:
     }
 
 
+def _rescue_alternative_theme_schema(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Remap known alternative theme-pick schemas to the required one.
+
+    finllama produces:  {id, description, investmentThesis, keyDrivers, investmentApproach, example}
+    Required schema:    {theme, confidence, rationale, evidence_phrases}
+
+    Only remaps fields that are missing or clearly wrong; existing valid fields
+    are never overwritten.
+    """
+    if not isinstance(raw, dict):
+        return raw
+
+    rescued = dict(raw)
+
+    # ---- theme rescue: map 'id' → 'theme' when theme is absent or invalid ----
+    if rescued.get("theme") not in ALLOWED_THEMES:
+        raw_id = str(rescued.get("id") or "").strip()
+        matched = next(
+            (t for t in ALLOWED_THEMES if t.lower() == raw_id.lower()),
+            None,
+        )
+        if matched:
+            rescued["theme"] = matched
+            logger.info(f"[triage rescue] Mapped 'id'={raw_id!r} → theme={matched!r}")
+            # Restore confidence to a non-zero default if it was zeroed out
+            try:
+                if float(rescued.get("confidence", 0)) == 0.0:
+                    rescued["confidence"] = 0.7
+            except (TypeError, ValueError):
+                rescued["confidence"] = 0.7
+
+    # ---- rationale rescue: pull from investmentThesis / investmentApproach / description ----
+    if not (rescued.get("rationale") or "").strip():
+        for src in ("investmentThesis", "investmentApproach", "description"):
+            text = str(rescued.get(src) or "").strip()
+            if text:
+                rescued["rationale"] = text[:600]
+                logger.info(f"[triage rescue] Mapped '{src}' → rationale")
+                break
+
+    # ---- evidence_phrases rescue: pull names from keyDrivers list ----
+    if not (rescued.get("evidence_phrases") or []):
+        drivers = rescued.get("keyDrivers") or []
+        if isinstance(drivers, list):
+            phrases = []
+            for kd in drivers[:5]:
+                if isinstance(kd, dict):
+                    name = str(kd.get("name") or "").strip()
+                    desc = str(kd.get("description") or "").strip()
+                    phrase = f"{name}: {desc}"[:120] if (name and desc) else (name or desc)
+                    if phrase:
+                        phrases.append(phrase)
+                elif isinstance(kd, str) and kd.strip():
+                    phrases.append(kd.strip()[:120])
+            if phrases:
+                rescued["evidence_phrases"] = phrases
+                logger.info(f"[triage rescue] Mapped 'keyDrivers' → {len(phrases)} evidence_phrases")
+
+    return rescued
+
+
 def triage_paper_node(state: AgentState) -> AgentState:
     """Agent 1: classify paper theme using the abstract."""
     paper_text = state.get("paper_text", "")
@@ -1209,6 +1270,7 @@ def triage_paper_node(state: AgentState) -> AgentState:
             }
 
     try:
+        theme_pick = _rescue_alternative_theme_schema(theme_pick)
         theme_pick.setdefault("confidence", 0.0)
         theme_pick["confidence"] = max(0.0, min(1.0, float(theme_pick["confidence"])))
         if theme_pick.get("theme") not in ALLOWED_THEMES:
