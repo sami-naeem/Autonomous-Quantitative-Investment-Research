@@ -34,7 +34,7 @@ class LLMConfig:
     MAIN_TEMPERATURE = 0.0
 
     # vLLM Lambda endpoint
-    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://209.20.159.74:8000/v1")
+    LAMBDA_ENDPOINT = os.getenv("LAMBDA_ENDPOINT", "http://141.148.153.36:8000/v1")
     LAMBDA_API_KEY = os.getenv("LAMBDA_API_KEY", "token-abc123")
 
     # Model base path on Lambda server
