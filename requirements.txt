@@ -23,6 +23,7 @@ langchain-community
 # langchain-core>=0.3.81 required for CVE-2025-68664 (LangGrinch serialization fix)
 langchain-core>=0.3.81
 langchain-openai
+langchain-anthropic
 langchain-tavily
 
 # other

@@ -60,6 +60,31 @@ class LLMConfig:
     ANALYSIS_MODEL = ACTIVE_MODEL
     ORCHESTRATION_MODEL = ACTIVE_MODEL
 
+    # Anthropic (Claude) API key — used when CODE_GEN_PROVIDER="claude"
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+    # Code generation LLM (Agents 5 & 6) — independent of the main pipeline model
+    # Set CODE_GEN_PROVIDER to switch between providers without touching other agents.
+    # Options: "openai" | "claude" | "custom"
+    CODE_GEN_PROVIDER = os.getenv("CODE_GEN_PROVIDER", "openai")
+    # Model name for the chosen provider (e.g. "gpt-4o", "claude-opus-4-6", "llama-3.1-8b")
+    CODE_GEN_MODEL = os.getenv("CODE_GEN_MODEL", "gpt-4o-mini")
+    # API key for the code-gen provider.
+    #   openai  → falls back to OPENAI_API_KEY if not set
+    #   claude  → falls back to ANTHROPIC_API_KEY if not set
+    #   custom  → falls back to "token-abc123" (vLLM dummy key) if not set
+    CODE_GEN_API_KEY = os.getenv("CODE_GEN_API_KEY", "")
+    # Base URL for "custom" provider (e.g. a second vLLM endpoint, Ollama, etc.)
+    CODE_GEN_ENDPOINT = os.getenv("CODE_GEN_ENDPOINT", "")
+    CODE_GEN_TEMPERATURE = float(os.getenv("CODE_GEN_TEMPERATURE", "0.1"))
+    # How many times to re-send code to the sandbox after a runtime error
+    SANDBOX_MAX_RETRIES = int(os.getenv("SANDBOX_MAX_RETRIES", "2"))
+
+    # Sandbox endpoint for code execution (Phase 2/3)
+    # This is the HTTP endpoint where generated code is sent for execution
+    # The sandbox machine must have Sharadar data on local disk
+    SANDBOX_ENDPOINT_URL = os.getenv("SANDBOX_ENDPOINT_URL", "http://localhost:9000")
+
 
 class LangSmithConfig:
     """LangSmith tracing configuration"""

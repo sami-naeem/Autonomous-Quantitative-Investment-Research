@@ -60,6 +60,17 @@ class AgentState(TypedDict):
     # GCS checkpoint URIs written inline by each agent node
     triage_gcs_uri: Annotated[str, _last_value]
     factor_gcs_uri: Annotated[str, _last_value]
+    # Phase 2/3: Agents 3-7 state fields for code generation and sandbox execution
+    data_catalog: Annotated[dict, _last_value]  # A3 output: selected Sharadar tables/columns
+    codegen_prompt: Annotated[str, _last_value]  # A4 output: assembled code-gen context
+    generated_code: Annotated[str, _last_value]  # A5 output: raw Python code string
+    validated_code: Annotated[str, _last_value]  # A6 output: validated/fixed code
+    validation_notes: Annotated[str, _last_value]  # A6 output: validation feedback
+    sandbox_result: Annotated[dict, _last_value]  # A7 output: execution result from endpoint
+    backtest_metrics: Annotated[dict, _last_value]  # A7 output: parsed backtest metrics
+    returns_csv_gcs_uri: Annotated[str, _last_value]  # A7 output: GCS URI of returns CSV
+    # Number of sandbox error-revision cycles completed (capped by SANDBOX_MAX_RETRIES)
+    sandbox_retry_count: Annotated[Optional[int], _last_optional]
 
 
 def select_model_node(state: AgentState) -> AgentState:

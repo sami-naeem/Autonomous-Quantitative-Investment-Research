@@ -111,6 +111,48 @@ def get_llm_by_name(model_name: str):
     return model_map.get(model_name, llm)
 
 
+def get_codegen_llm():
+    """
+    Get the LLM for code generation (Agents 5 & 6).
+
+    Configured independently from the main pipeline model via env vars:
+      CODE_GEN_PROVIDER  — "openai" | "claude" | "custom"
+      CODE_GEN_MODEL     — model name for the chosen provider
+      CODE_GEN_API_KEY   — API key (falls back to provider-specific env var)
+      CODE_GEN_ENDPOINT  — base URL for "custom" provider
+      CODE_GEN_TEMPERATURE
+
+    Returns:
+        A LangChain chat model instance ready for code generation.
+    """
+    provider = LLMConfig.CODE_GEN_PROVIDER.lower()
+
+    if provider == "claude":
+        from langchain_anthropic import ChatAnthropic
+        api_key = LLMConfig.CODE_GEN_API_KEY or LLMConfig.ANTHROPIC_API_KEY
+        return ChatAnthropic(
+            model=LLMConfig.CODE_GEN_MODEL,
+            temperature=LLMConfig.CODE_GEN_TEMPERATURE,
+            api_key=api_key,
+        )
+
+    if provider == "custom":
+        return ChatOpenAI(
+            base_url=LLMConfig.CODE_GEN_ENDPOINT,
+            api_key=LLMConfig.CODE_GEN_API_KEY or "token-abc123",
+            model=LLMConfig.CODE_GEN_MODEL,
+            temperature=LLMConfig.CODE_GEN_TEMPERATURE,
+            streaming=False,
+        )
+
+    # Default: openai
+    return ChatOpenAI(
+        model=LLMConfig.CODE_GEN_MODEL,
+        temperature=LLMConfig.CODE_GEN_TEMPERATURE,
+        api_key=LLMConfig.CODE_GEN_API_KEY or LLMConfig.OPENAI_API_KEY,
+    )
+
+
 def get_llm_for_task(task: str):
     """
     Get the appropriate LLM for a specific task based on configuration.

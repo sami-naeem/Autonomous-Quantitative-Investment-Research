@@ -27,11 +27,11 @@ from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage
 from langchain_core.tools import tool
 
-from Agents.config import LoggingConfig, LLMConfig, BM25Config
+from Agents.config import LoggingConfig, LLMConfig, BM25Config, GCSConfig
 from Agents.nodes import AgentState, select_model_node, select_paper_node
 from Agents.gcs_utils import ensure_auth, list_available_papers, get_storage_client, upload_agent_output
 from Agents.config import GCSConfig
-from Agents.llm_config import get_llm_by_name
+from Agents.llm_config import get_llm_by_name, get_codegen_llm
 from Agents.prompts import (
     AGENT1_PROMPT,
     AGENT2_EXTRACT_PROMPT,
@@ -1491,6 +1491,365 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
     }
 
 
+def agent3_select_data_node(state: AgentState) -> AgentState:
+    """Agent 3: Select relevant Sharadar tables and columns for the factor."""
+    paper_name = state.get("paper_name", "unknown")
+    model_choice = state.get("model_choice", "openai")
+    llm = get_llm_by_name(model_choice)
+    factor_extract = state.get("factor_extract", {})
+    theme_pick = state.get("theme_pick", {})
+    logger.info(f"[Agent3] Selecting data for paper={paper_name}, model={model_choice}")
+    system_prompt = """You are a data engineer selecting Sharadar database tables and columns for quantitative factor construction.
+Based on the factor description and theme, identify which Sharadar tables and specific columns are needed.
+
+Available Sharadar tables:
+- SF1: Fundamental data (balance sheet, income statement, cash flow) - columns like 'assets', 'liabilities', 'netinc', 'revenue'
+- DAILY: Daily market data - columns like 'marketcap', 'pe', 'pb', 'ev', 'debt'
+- SEP: Price data - columns like 'close', 'closeadj', 'volume', 'open', 'high', 'low'
+- TICKERS: Company metadata - columns like 'sector', 'industry', 'siccode'
+
+OUTPUT SCHEMA (JSON only):
+{
+  "tables": ["SF1", "DAILY", "SEP"],
+  "columns_per_table": {
+    "SF1": ["column1", "column2"],
+    "DAILY": ["column3"],
+    "SEP": ["closeadj"]
+  },
+  "join_keys": ["ticker", "date"],
+  "rationale": "Brief explanation of why these tables/columns are needed"
+}"""
+    user_payload = {
+        "factor_purpose": factor_extract.get("purpose", ""),
+        "computation_logic": factor_extract.get("computation_logic", ""),
+        "theme": theme_pick.get("theme", "unknown"),
+    }
+    try:
+        from langchain_core.messages import SystemMessage, HumanMessage
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=json.dumps(user_payload, indent=2)),
+        ]
+        resp = llm.invoke(messages)
+        raw_content = getattr(resp, "content", "") or ""
+        data_catalog = _extract_json(raw_content)
+    except Exception as e:
+        logger.warning(f"[Agent3] Data selection failed: {e}. Using fallback.")
+        data_catalog = {
+            "tables": ["SF1", "SEP"],
+            "columns_per_table": {
+                "SF1": ["assets", "liabilities", "netinc", "revenue"],
+                "SEP": ["closeadj", "volume"],
+            },
+            "join_keys": ["ticker", "date"],
+            "rationale": f"Fallback selection due to error: {e}",
+        }
+    _log_agent_output("Agent 3 (data_catalog)", data_catalog)
+    return {"data_catalog": data_catalog}
+
+
+def agent4_build_prompt_node(state: AgentState) -> AgentState:
+    """Agent 4: Build the code generation prompt from factor and data catalog."""
+    paper_name = state.get("paper_name", "unknown")
+    factor_extract = state.get("factor_extract", {})
+    data_catalog = state.get("data_catalog", {})
+    theme_pick = state.get("theme_pick", {})
+    logger.info(f"[Agent4] Building code-gen prompt for {paper_name}")
+    prompt_parts = [
+        "=== CODE GENERATION CONTEXT ===",
+        "",
+        "PAPER INFORMATION:",
+        f"  Paper: {paper_name}",
+        f"  Theme: {theme_pick.get('theme', 'unknown')}",
+        "",
+        "FACTOR TO IMPLEMENT:",
+        f"  Purpose: {factor_extract.get('purpose', 'missing_or_unclear')}",
+        f"  Computation Logic: {factor_extract.get('computation_logic', 'missing_or_unclear')}",
+        "",
+        "DATA SOURCES (Sharadar):",
+    ]
+    for table, columns in data_catalog.get("columns_per_table", {}).items():
+        prompt_parts.append(f"  {table}: {', '.join(columns)}")
+    prompt_parts.extend([
+        "",
+        "=== CODE REQUIREMENTS ===",
+        "1. Load data from Sharadar CSV files in the local data directory",
+        "2. Implement the factor computation exactly as described",
+        "3. Construct portfolios based on the factor (long/short or quintiles)",
+        "4. Compute daily returns for the strategy",
+        "5. Save returns to 'returns.csv' with columns: date, strategy_returns",
+        "6. Print final metrics: print('METRICS:', json.dumps({...}))",
+        "7. Include sharpe_ratio, annualized_return, annualized_volatility, max_drawdown",
+        "",
+        "=== SHARADAR DATA RULES ===",
+        "- SEP is LARGE - always use usecols=['ticker','date','closeadj']",
+        "- Use closeadj (adjusted close) for return calculations",
+        "- SF1 date column is 'calendardate' NOT 'date'",
+        "- Filter SF1 with dimension=='ARQ' for quarterly",
+        "- NEVER merge large DataFrames on just 'ticker' without 'date' - causes memory explosion",
+        "- Use pivot_table to wide format for cross-sectional operations",
+        "- Lag fundamental data to avoid look-ahead bias",
+        "",
+        "Generate complete, executable Python code:",
+    ])
+    codegen_prompt = "\n".join(prompt_parts)
+    _log_agent_output("Agent 4 (codegen_prompt)", {"prompt_length": len(codegen_prompt)})
+    return {"codegen_prompt": codegen_prompt}
+
+
+def agent5_generate_code_node(state: AgentState) -> AgentState:
+    """Agent 5: Generate Python backtest code from the assembled prompt."""
+    paper_name = state.get("paper_name", "unknown")
+    llm = get_codegen_llm()
+    codegen_prompt = state.get("codegen_prompt", "")
+    logger.info(f"[Agent5] Generating code for {paper_name}")
+    system_prompt = """You are an expert quantitative finance Python developer.
+Your task is to write complete, executable Python code for a backtest strategy.
+
+CRITICAL RULES:
+1. Return ONLY valid Python code - no markdown, no explanations, no code fences
+2. ALL imports must be at the top: pandas, numpy, json, os
+3. The code MUST read from local Sharadar CSV files
+4. The code MUST save returns to 'returns.csv' in the working directory
+5. The code MUST print metrics as the final line: print("METRICS:", json.dumps({...}))
+6. Include these metrics: sharpe_ratio, annualized_return, annualized_volatility, max_drawdown, total_return
+7. Handle errors gracefully - use try/except where appropriate
+8. The code must be completely self-contained and runnable
+
+SHARADAR-SPECIFIC PATTERNS:
+- Load SEP: pd.read_csv(f"{data_dir}/SEP.csv", usecols=['ticker','date','closeadj'], parse_dates=['date'])
+- Load SF1: pd.read_csv(f"{data_dir}/SF1.csv", usecols=['ticker','calendardate','dimension','fieldname'], parse_dates=['calendardate'])
+- Load TICKERS: pd.read_csv(f"{data_dir}/TICKERS.csv", usecols=['ticker','table','isdelisted','category'])
+- Filter tickers: df = df[df['isdelisted'] == 'N'] and df['category'] == 'Domestic Common Stock'
+- Pivot SEP to wide: prices = sep.pivot_table(index='date', columns='ticker', values='closeadj')
+- Compute returns: returns = prices.pct_change()
+- Lag fundamentals: sf1_lagged = sf1.copy(); sf1_lagged['calendardate'] = sf1_lagged['calendardate'] + pd.DateOffset(months=3)"""
+    try:
+        from langchain_core.messages import SystemMessage, HumanMessage
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=codegen_prompt),
+        ]
+        resp = llm.invoke(messages)
+        generated_code = getattr(resp, "content", "") or ""
+        generated_code = _strip_code_fences(generated_code)
+    except Exception as e:
+        logger.error(f"[Agent5] Code generation failed: {e}")
+        generated_code = f"# Code generation failed: {e}\n# Please check the logs\n"
+    _log_agent_output("Agent 5 (generated_code)", {"code_length": len(generated_code), "preview": generated_code[:200]})
+    return {"generated_code": generated_code}
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences from generated code."""
+    text = text.strip()
+    if text.startswith("```python"):
+        text = text[9:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+def agent6_validate_code_node(state: AgentState) -> AgentState:
+    """Agent 6: Validate and potentially fix the generated code."""
+    paper_name = state.get("paper_name", "unknown")
+    generated_code = state.get("generated_code", "")
+    logger.info(f"[Agent6] Validating code for {paper_name}")
+    validation_notes = []
+    validated_code = generated_code
+    issues = []
+    if "import pandas" not in generated_code and "import pd" not in generated_code:
+        issues.append("Missing pandas import")
+    if "import numpy" not in generated_code and "import np" not in generated_code:
+        issues.append("Missing numpy import")
+    if ".to_csv(" not in generated_code:
+        issues.append("Missing CSV output")
+    if "METRICS:" not in generated_code:
+        issues.append("Missing METRICS print statement")
+    if "read_csv" not in generated_code:
+        issues.append("Missing data loading (read_csv)")
+    if issues:
+        validation_notes.append(f"Issues found: {', '.join(issues)}")
+        logger.warning(f"[Agent6] Validation issues: {issues}")
+        try:
+            llm = get_codegen_llm()
+            fix_prompt = f"""Fix the following Python code to address these issues: {', '.join(issues)}
+
+ORIGINAL CODE:
+```python
+{generated_code}
+```
+
+Return ONLY the fixed Python code, no markdown, no explanations."""
+            from langchain_core.messages import HumanMessage
+            resp = llm.invoke([HumanMessage(content=fix_prompt)])
+            fixed_code = getattr(resp, "content", "") or ""
+            fixed_code = _strip_code_fences(fixed_code)
+            if fixed_code and len(fixed_code) > 50:
+                validated_code = fixed_code
+                validation_notes.append("Code was auto-fixed by LLM")
+            else:
+                validation_notes.append("Auto-fix failed, using original code")
+        except Exception as e:
+            validation_notes.append(f"Auto-fix error: {e}")
+            logger.error(f"[Agent6] Auto-fix failed: {e}")
+    else:
+        validation_notes.append("Code validation passed")
+    _log_agent_output("Agent 6 (validation)", {"notes": validation_notes, "code_length": len(validated_code)})
+    return {
+        "validated_code": validated_code,
+        "validation_notes": "; ".join(validation_notes),
+    }
+
+
+def agent7_submit_sandbox_node(state: AgentState) -> AgentState:
+    """
+    Agent 7: Submit validated code to the sandbox endpoint for execution.
+    
+    IMPORTANT: This is a pure submission node. The sandbox endpoint performs
+    NO LLM-based auto-fixing. If execution fails, the LangGraph agent can
+    decide to retry by routing back to code generation (A5) or code validation (A6).
+    """
+    paper_name = state.get("paper_name", "unknown")
+    validated_code = state.get("validated_code", "")
+    
+    logger.info(f"[Agent7] Submitting code to sandbox for {paper_name}")
+    
+    if not validated_code.strip():
+        logger.error("[Agent7] No code to submit")
+        return {
+            "sandbox_result": {"status": "failure", "error": "No code to submit"},
+            "backtest_metrics": None,
+            "returns_csv_gcs_uri": None,
+        }
+    
+    sandbox_url = f"{LLMConfig.SANDBOX_ENDPOINT_URL}/execute"
+    payload = {
+        "code": validated_code,
+        "paper_name": paper_name,
+    }
+    
+    try:
+        logger.info(f"[Agent7] POST to {sandbox_url}")
+        response = httpx.post(
+            sandbox_url,
+            json=payload,
+            timeout=600.0,
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        result = response.json()
+        
+        status = result.get("status", "failure")
+        logger.info(f"[Agent7] Sandbox execution completed: status={status}")
+        
+        return {
+            "sandbox_result": result,
+            "backtest_metrics": result.get("metrics"),
+            "returns_csv_gcs_uri": result.get("returns_csv_gcs_uri"),
+        }
+        
+    except httpx.TimeoutException:
+        logger.error("[Agent7] Sandbox execution timed out after 600s")
+        return {
+            "sandbox_result": {
+                "status": "failure",
+                "error": "Timeout",
+                "stderr": "Sandbox execution timed out after 600 seconds",
+            },
+            "backtest_metrics": None,
+            "returns_csv_gcs_uri": None,
+        }
+    except Exception as e:
+        logger.error(f"[Agent7] Sandbox submission failed: {e}")
+        return {
+            "sandbox_result": {
+                "status": "failure",
+                "error": str(e),
+                "stderr": str(e),
+            },
+            "backtest_metrics": None,
+            "returns_csv_gcs_uri": None,
+        }
+
+
+def sandbox_revision_node(state: AgentState) -> AgentState:
+    """
+    Revision node: called after a sandbox execution error.
+
+    Uses the code-gen LLM (CODE_GEN_PROVIDER) to rewrite the code based on
+    the sandbox stderr / error message, then bumps sandbox_retry_count so the
+    graph can cap total retries at SANDBOX_MAX_RETRIES.
+    """
+    paper_name = state.get("paper_name", "unknown")
+    validated_code = state.get("validated_code", "")
+    sandbox_result = state.get("sandbox_result", {})
+    retry_count = state.get("sandbox_retry_count") or 0
+
+    stderr = sandbox_result.get("stderr", "") or sandbox_result.get("error", "unknown error")
+    logger.info(f"[SandboxRevision] Attempt {retry_count + 1} for {paper_name}. Error: {stderr[:200]}")
+
+    fix_prompt = f"""The following Python backtest code was executed in a sandbox and produced a runtime error.
+Fix the code so that it runs without errors.
+
+RUNTIME ERROR:
+{stderr}
+
+ORIGINAL CODE:
+```python
+{validated_code}
+```
+
+Return ONLY the corrected Python code — no markdown fences, no explanations."""
+
+    try:
+        llm = get_codegen_llm()
+        from langchain_core.messages import HumanMessage
+        resp = llm.invoke([HumanMessage(content=fix_prompt)])
+        revised_code = _strip_code_fences(getattr(resp, "content", "") or "")
+        if revised_code and len(revised_code) > 50:
+            logger.info(f"[SandboxRevision] Revised code produced ({len(revised_code)} chars)")
+            validated_code = revised_code
+        else:
+            logger.warning("[SandboxRevision] LLM returned empty/short response; keeping original code")
+    except Exception as e:
+        logger.error(f"[SandboxRevision] Revision LLM call failed: {e}")
+
+    return {
+        "validated_code": validated_code,
+        "sandbox_retry_count": retry_count + 1,
+    }
+
+
+def _route_after_sandbox(state: AgentState) -> str:
+    """
+    Conditional edge after agent7_submit_sandbox.
+
+    Routes to 'sandbox_revision' when the sandbox returned an error and we
+    have not yet exhausted SANDBOX_MAX_RETRIES; otherwise routes to
+    'save_output_to_gcs'.
+    """
+    sandbox_result = state.get("sandbox_result", {})
+    retry_count = state.get("sandbox_retry_count") or 0
+    max_retries = LLMConfig.SANDBOX_MAX_RETRIES
+
+    status = sandbox_result.get("status", "")
+    success = sandbox_result.get("success", True)  # legacy field, default optimistic
+    has_error = (status == "failure") or (not success) or bool(sandbox_result.get("error"))
+
+    if has_error and retry_count < max_retries:
+        logger.info(
+            f"[Router] Sandbox error detected (retry {retry_count}/{max_retries}) → sandbox_revision"
+        )
+        return "sandbox_revision"
+
+    if has_error:
+        logger.warning(f"[Router] Sandbox still failing after {retry_count} retries → save_output_to_gcs")
+    return "save_output_to_gcs"
+
+
 def save_output_to_gcs_node(state: AgentState) -> AgentState:
     """Save final agent outputs to the GCS output bucket as JSON."""
     paper_name = state.get("paper_name", "unknown")
@@ -1506,6 +1865,15 @@ def save_output_to_gcs_node(state: AgentState) -> AgentState:
         "factor_extract": normalized_factor_extract,
         "triage_gcs_uri": state.get("triage_gcs_uri", ""),
         "factor_gcs_uri": state.get("factor_gcs_uri", ""),
+        # Phase 2/3 fields
+        "data_catalog": state.get("data_catalog", {}),
+        "codegen_prompt": state.get("codegen_prompt", ""),
+        "generated_code": state.get("generated_code", ""),
+        "validated_code": state.get("validated_code", ""),
+        "validation_notes": state.get("validation_notes", ""),
+        "sandbox_result": state.get("sandbox_result", {}),
+        "backtest_metrics": state.get("backtest_metrics"),
+        "returns_csv_gcs_uri": state.get("returns_csv_gcs_uri", ""),
     }
 
     storage_client = get_storage_client()
@@ -1553,6 +1921,13 @@ def build_graph() -> StateGraph:
     graph.add_node("load_paper_markdown", load_paper_markdown_from_gcs_node)
     graph.add_node("triage_paper", triage_paper_node)
     graph.add_node("agent2_extract_factor", agent2_extract_factor_node)
+    # Phase 2/3: Code generation and sandbox execution nodes
+    graph.add_node("agent3_select_data", agent3_select_data_node)
+    graph.add_node("agent4_build_prompt", agent4_build_prompt_node)
+    graph.add_node("agent5_generate_code", agent5_generate_code_node)
+    graph.add_node("agent6_validate_code", agent6_validate_code_node)
+    graph.add_node("agent7_submit_sandbox", agent7_submit_sandbox_node)
+    graph.add_node("sandbox_revision", sandbox_revision_node)
     graph.add_node("save_output_to_gcs", save_output_to_gcs_node)
 
     graph.set_entry_point("select_model")
@@ -1575,7 +1950,22 @@ def build_graph() -> StateGraph:
     graph.add_edge("select_paper", "load_paper_markdown")
     graph.add_edge("load_paper_markdown", "triage_paper")
     graph.add_edge("triage_paper", "agent2_extract_factor")
-    graph.add_edge("agent2_extract_factor", "save_output_to_gcs")
+    # Phase 2/3: Wire A3-A7 nodes sequentially
+    graph.add_edge("agent2_extract_factor", "agent3_select_data")
+    graph.add_edge("agent3_select_data", "agent4_build_prompt")
+    graph.add_edge("agent4_build_prompt", "agent5_generate_code")
+    graph.add_edge("agent5_generate_code", "agent6_validate_code")
+    graph.add_edge("agent6_validate_code", "agent7_submit_sandbox")
+    # After sandbox: retry with revised code on error, or proceed to save on success
+    graph.add_conditional_edges(
+        "agent7_submit_sandbox",
+        _route_after_sandbox,
+        {
+            "sandbox_revision": "sandbox_revision",
+            "save_output_to_gcs": "save_output_to_gcs",
+        },
+    )
+    graph.add_edge("sandbox_revision", "agent7_submit_sandbox")
     graph.add_edge("save_output_to_gcs", END)
 
     return graph.compile()
@@ -1616,6 +2006,15 @@ def main():
         "endpoint_valid": False,
         "endpoint_error": "",
         "random_seed": None,
+        # Phase 2/3: Code generation and sandbox execution fields
+        "data_catalog": {},
+        "codegen_prompt": "",
+        "generated_code": "",
+        "validated_code": "",
+        "validation_notes": "",
+        "sandbox_result": {},
+        "backtest_metrics": None,
+        "returns_csv_gcs_uri": "",
     }
 
     logger.info("Starting workflow...")
