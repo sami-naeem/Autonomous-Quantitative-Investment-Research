@@ -54,6 +54,12 @@ class AgentState(TypedDict):
     endpoint_error: Annotated[str, _last_value]
     # Optional seed for reproducible paper selection across coordinated runs
     random_seed: Annotated[Optional[int], _last_optional]
+    # Fields used by load_paper_markdown but not previously declared in TypedDict
+    paper_gcs_uri: Annotated[str, _last_value]
+    paper_blob_name: Annotated[str, _last_value]
+    # GCS checkpoint URIs written inline by each agent node
+    triage_gcs_uri: Annotated[str, _last_value]
+    factor_gcs_uri: Annotated[str, _last_value]
 
 
 def select_model_node(state: AgentState) -> AgentState:

@@ -1290,10 +1290,25 @@ def triage_paper_node(state: AgentState) -> AgentState:
 
     _log_agent_output("Agent 1 (triage)", theme_pick)
 
+    triage_gcs_uri = ""
+    storage_client = get_storage_client()
+    if storage_client is not None:
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+            blob_name = (
+                f"{state.get('paper_name', 'unknown')}/"
+                f"{state.get('model_choice', 'unknown')}/"
+                f"agent1_triage_{ts}.json"
+            )
+            triage_gcs_uri = upload_agent_output(storage_client, blob_name, theme_pick)
+            logger.info(f"[Agent1] Triage checkpoint saved to {triage_gcs_uri}")
+        except Exception as e:
+            logger.warning(f"[Agent1] Triage GCS checkpoint failed: {e}")
+
     return {
-        **state,
         "abstract": abstract,
         "theme_pick": theme_pick,
+        "triage_gcs_uri": triage_gcs_uri,
     }
 
 
@@ -1455,7 +1470,25 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
 
     _log_agent_output("Agent 2 (factor_extract)", factor_extract)
 
-    return {**state, "factor_extract": factor_extract}
+    factor_gcs_uri = ""
+    storage_client = get_storage_client()
+    if storage_client is not None:
+        try:
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+            blob_name = (
+                f"{state.get('paper_name', 'unknown')}/"
+                f"{state.get('model_choice', 'unknown')}/"
+                f"agent2_factor_{ts}.json"
+            )
+            factor_gcs_uri = upload_agent_output(storage_client, blob_name, factor_extract)
+            logger.info(f"[Agent2] Factor checkpoint saved to {factor_gcs_uri}")
+        except Exception as e:
+            logger.warning(f"[Agent2] Factor GCS checkpoint failed: {e}")
+
+    return {
+        "factor_extract": factor_extract,
+        "factor_gcs_uri": factor_gcs_uri,
+    }
 
 
 def save_output_to_gcs_node(state: AgentState) -> AgentState:
@@ -1471,6 +1504,8 @@ def save_output_to_gcs_node(state: AgentState) -> AgentState:
         "model_choice": state.get("model_choice", ""),
         "theme_pick": state.get("theme_pick", {}),
         "factor_extract": normalized_factor_extract,
+        "triage_gcs_uri": state.get("triage_gcs_uri", ""),
+        "factor_gcs_uri": state.get("factor_gcs_uri", ""),
     }
 
     storage_client = get_storage_client()
@@ -1575,6 +1610,12 @@ def main():
         "abstract": "",
         "theme_pick": {},
         "factor_extract": {},
+        "triage_gcs_uri": "",
+        "factor_gcs_uri": "",
+        "output_gcs_uri": "",
+        "endpoint_valid": False,
+        "endpoint_error": "",
+        "random_seed": None,
     }
 
     logger.info("Starting workflow...")
