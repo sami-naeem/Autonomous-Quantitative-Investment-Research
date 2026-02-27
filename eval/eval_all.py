@@ -733,6 +733,8 @@ def main():
     parser.add_argument("--eval", action="store_true", help="Run evaluation")
     parser.add_argument("--list-papers", action="store_true")
     parser.add_argument("--papers", nargs="+", default=None)
+    parser.add_argument("--exclude-papers", nargs="+", default=None,
+                        help="Paper names to exclude from pull and evaluation")
     parser.add_argument("--models", nargs="+", default=None, choices=MODEL_CHOICES)
     parser.add_argument("--agent-outputs", default=AGENT_OUTPUTS_FILE)
     parser.add_argument("--gt-task1", default=GROUND_TRUTH_TASK1)
@@ -760,11 +762,25 @@ def main():
             print(f"  [{i:3d}] {p}")
         return
 
+    # ── Build exclusion set ────────────────────────────────────────
+    exclude_set: Set[str] = set()
+    if args.exclude_papers:
+        exclude_set = {normalize_paper_name(p) for p in args.exclude_papers}
+        logger.info(f"Will exclude {len(exclude_set)} papers: {sorted(exclude_set)}")
+
     # ── Pull ─────────────────────────────────────────────────────────
     agent_outputs = None
     if args.pull:
         client = get_gcs_client()
         agent_outputs = pull_all_outputs(client, args.papers, args.models)
+        if exclude_set:
+            before = len(agent_outputs)
+            agent_outputs = [
+                a for a in agent_outputs
+                if normalize_paper_name(a["paper_name"]) not in exclude_set
+            ]
+            logger.info(f"Excluded {before - len(agent_outputs)} outputs "
+                        f"({len(exclude_set)} papers) during pull")
         out_path = out_dir / args.agent_outputs
         with open(out_path, "w") as f:
             json.dump(agent_outputs, f, indent=2, default=str)
@@ -780,6 +796,14 @@ def main():
             with open(ao_path) as f:
                 agent_outputs = json.load(f)
             logger.info(f"Loaded {len(agent_outputs)} agent outputs")
+            if exclude_set:
+                before = len(agent_outputs)
+                agent_outputs = [
+                    a for a in agent_outputs
+                    if normalize_paper_name(a["paper_name"]) not in exclude_set
+                ]
+                logger.info(f"Excluded {before - len(agent_outputs)} outputs "
+                            f"({len(exclude_set)} papers) during eval")
 
         gt1, gt2, name_map = load_ground_truth(args.gt_task1, args.gt_task2)
 
