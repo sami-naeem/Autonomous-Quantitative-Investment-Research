@@ -173,6 +173,7 @@ echo "[7/13] Downloading base model: $BASE_MODEL_REPO..."
 
 # Safer Hugging Face download (resume + single worker)
 export HF_HUB_ENABLE_HF_TRANSFER=0
+export BASE_MODEL_REPO BASE_MODEL_NAME
 
 python - <<'PY'
 from huggingface_hub import snapshot_download
@@ -366,7 +367,6 @@ docker run -d --name vllm-server \\
     ${MODEL_FLAG}/models/${FINLLAMA_MODEL_NAME} \\
     --host 0.0.0.0 --port ${PORT} \\
     --api-key "${API_KEY}" \\
-    --served-model-name finllama \\
     --tensor-parallel-size 1 \\
     --gpu-memory-utilization 0.90 \\
     --max-model-len 65536 \\
@@ -539,3 +539,5 @@ echo "  Test:     curl http://localhost:${PORT}/v1/models -H 'Authorization: Bea
 echo "  Stop:     ~/scripts/stop_vllm.sh"
 echo ""
 echo "=========================================="
+
+
