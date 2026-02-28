@@ -40,3 +40,6 @@ endpoints/setup_lambda.sh
 comprehensive evaluation.md
 .claude/settings.local.json
 results/ref_Abarbanell_and_Bushee_1998.json
+
+# eval outputs
+/eval/*.json
