@@ -14,6 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
+import argparse
 import json
 import logging
 import re
@@ -109,6 +110,79 @@ def _build_paper_index(paper_text: str) -> None:
     for i, chunk in enumerate(chunks[:3]):
         preview = chunk[:300].replace('\n', '↵')
         logger.info(f"[BM25] Chunk[{i}]: {preview!r}")
+
+
+# ---------------------------------------------------------------------
+# Ground-truth theme override (eval / ablation mode)
+# ---------------------------------------------------------------------
+_DEFAULT_EVAL_POLICY_PATH = Path(__file__).parent / "eval" / "osp_eval_policy_v003.json"
+
+def _load_ground_truth_theme(
+    paper_name: str,
+    eval_policy_path: str | Path | None = None,
+) -> Dict[str, Any] | None:
+    """Look up ground-truth theme from the eval policy JSON.
+
+    Matches *paper_name* against top-level keys in the eval policy
+    (exact first, then substring). Returns a synthetic ``theme_pick``
+    dict or ``None`` if no match is found.
+    """
+    policy_path = Path(eval_policy_path) if eval_policy_path else _DEFAULT_EVAL_POLICY_PATH
+    if not policy_path.exists():
+        logger.error(f"[ground-truth] Eval policy file not found: {policy_path}")
+        return None
+
+    try:
+        with open(policy_path, "r", encoding="utf-8") as f:
+            policy = json.load(f)
+    except Exception as e:
+        logger.error(f"[ground-truth] Failed to load eval policy: {e}")
+        return None
+
+    if not isinstance(policy, dict):
+        logger.error("[ground-truth] Eval policy is not a JSON object.")
+        return None
+
+    paper_key = (paper_name or "").strip()
+    if not paper_key:
+        logger.warning("[ground-truth] Empty paper_name — cannot look up ground truth.")
+        return None
+
+    matched_entry = None
+    if paper_key in policy:
+        matched_entry = policy[paper_key]
+    else:
+        paper_key_lower = paper_key.lower()
+        for key, entry in policy.items():
+            key_lower = key.lower()
+            if paper_key_lower in key_lower or key_lower in paper_key_lower:
+                matched_entry = entry
+                logger.info(f"[ground-truth] Fuzzy matched paper_name={paper_key!r} → key={key!r}")
+                break
+
+    if matched_entry is None:
+        logger.warning(f"[ground-truth] No match for paper_name={paper_key!r} in eval policy.")
+        return None
+
+    jkp_theme = (matched_entry.get("jkp_theme") or "").strip()
+    if not jkp_theme:
+        logger.warning(f"[ground-truth] Matched entry has no jkp_theme for paper_name={paper_key!r}.")
+        return None
+
+    resolved_theme = next(
+        (t for t in ALLOWED_THEMES if t.lower() == jkp_theme.lower()),
+        jkp_theme,
+    )
+
+    theme_pick = {
+        "theme": resolved_theme,
+        "confidence": 1.0,
+        "rationale": f"Ground-truth theme from eval policy (jkp_theme={jkp_theme!r}).",
+        "evidence_phrases": [],
+        "_ground_truth": True,
+    }
+    logger.info(f"[ground-truth] Resolved theme for {paper_key!r}: {resolved_theme!r}")
+    return theme_pick
 
 
 # ---------------------------------------------------------------------
@@ -1298,7 +1372,13 @@ def triage_paper_node(state: AgentState) -> AgentState:
 
 
 def agent2_extract_factor_node(state: AgentState) -> AgentState:
-    """Agent 2: extract factor purpose and computation logic."""
+    """Agent 2: extract factor purpose and computation logic.
+
+    When ``use_ground_truth_theme`` is set in state, the theme_pick passed
+    to the extraction LLM is replaced with the ground-truth jkp_theme from
+    the eval policy.  Agent 1 still runs normally and its output is preserved
+    in state for logging/comparison — only Agent 2's *input* is overridden.
+    """
     paper_text = state.get("paper_text", "")
     _PAPER_TEXT.set(paper_text)
     _build_paper_index(paper_text)   # build BM25 index once before the ReAct loop
@@ -1307,8 +1387,27 @@ def agent2_extract_factor_node(state: AgentState) -> AgentState:
     llm = get_llm_by_name(model_choice)
 
     abstract = state.get("abstract", "")
+
+    # --- Ground-truth theme override for ablation ---
+    theme_for_agent2 = state.get("theme_pick", {})
+    if state.get("use_ground_truth_theme"):
+        paper_name = state.get("paper_name", "")
+        eval_policy_path = state.get("eval_policy_path") or None
+        gt_theme = _load_ground_truth_theme(paper_name, eval_policy_path)
+        if gt_theme is not None:
+            logger.info(
+                f"[agent2] Overriding Agent 1 theme {theme_for_agent2.get('theme')!r} "
+                f"→ ground-truth {gt_theme['theme']!r}"
+            )
+            theme_for_agent2 = gt_theme
+        else:
+            logger.warning(
+                "[agent2] Ground-truth theme requested but lookup failed. "
+                "Using Agent 1 theme as fallback."
+            )
+
     payload = {
-        "theme_pick": state.get("theme_pick", {}),
+        "theme_pick": theme_for_agent2,
         "abstract": abstract,
     }
 
@@ -1551,9 +1650,37 @@ app = build_graph()
 
 def main():
     """Run the agent workflow interactively."""
+    parser = argparse.ArgumentParser(
+        description="Paper Replication Agent — Autonomous Quantitative Investment Research",
+    )
+    parser.add_argument(
+        "--ground-truth-theme",
+        action="store_true",
+        default=False,
+        help=(
+            "Agent 1 (triage) runs normally, but its theme output is replaced "
+            "with the ground-truth jkp_theme from the eval policy before being "
+            "passed to Agent 2.  Prevents upstream misclassification from "
+            "compounding into the factor extraction step."
+        ),
+    )
+    parser.add_argument(
+        "--eval-policy-path",
+        type=str,
+        default=None,
+        help=(
+            "Path to the eval policy JSON file. "
+            "Defaults to eval/osp_eval_policy_v003.json relative to this script."
+        ),
+    )
+    args = parser.parse_args()
+
     logger.info("=" * 80)
     logger.info("Autonomous Quantitative Investment Research - Paper Replication Agent")
     logger.info("=" * 80)
+    if args.ground_truth_theme:
+        policy_display = args.eval_policy_path or str(_DEFAULT_EVAL_POLICY_PATH)
+        logger.info(f"[mode] Ground-truth theme override ENABLED (policy: {policy_display})")
 
     storage_client = ensure_auth()
     if storage_client:
@@ -1575,6 +1702,9 @@ def main():
         "abstract": "",
         "theme_pick": {},
         "factor_extract": {},
+        # Ground-truth ablation flags
+        "use_ground_truth_theme": args.ground_truth_theme,
+        "eval_policy_path": args.eval_policy_path or "",
     }
 
     logger.info("Starting workflow...")
@@ -1588,7 +1718,11 @@ def main():
 
     print(f"\nPaper: {result.get('paper_name', 'N/A')}")
     print(f"\nModel Used: {result.get('model_choice', 'N/A')}")
-    print(f"\nTheme: {json.dumps(result.get('theme_pick', {}), indent=2)}")
+    if result.get("use_ground_truth_theme"):
+        print("\nAgent 2 Theme Input: GROUND TRUTH (eval policy)")
+    else:
+        print("\nAgent 2 Theme Input: Agent 1 (LLM classification)")
+    print(f"\nAgent 1 Theme: {json.dumps(result.get('theme_pick', {}), indent=2)}")
     print(f"\nFactor Extract: {json.dumps(result.get('factor_extract', {}), indent=2)}")
     print(f"\nOutput saved to: {result.get('output_gcs_uri', 'N/A')}")
 

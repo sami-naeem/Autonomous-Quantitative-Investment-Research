@@ -90,7 +90,13 @@ def download_paper_text(paper_name: str) -> str:
     return "\n\n".join(texts)
 
 
-def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -> dict:
+def run_pipeline(
+    paper_name: str,
+    paper_text: str,
+    model_choice: str = "base",
+    use_ground_truth_theme: bool = False,
+    eval_policy_path: str = "",
+) -> dict:
     initial_state = {
         "messages": [],
         "model_choice": model_choice,
@@ -101,6 +107,8 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -
         "abstract": "",
         "theme_pick": {},
         "factor_extract": {},
+        "use_ground_truth_theme": use_ground_truth_theme,
+        "eval_policy_path": eval_policy_path,
     }
     final_state = app.invoke(initial_state)
 
@@ -117,7 +125,12 @@ def run_pipeline(paper_name: str, paper_text: str, model_choice: str = "base") -
     }
 
 
-def run_all(model_choice: str = "base", start_index: int = 0):
+def run_all(
+    model_choice: str = "base",
+    start_index: int = 0,
+    use_ground_truth_theme: bool = False,
+    eval_policy_path: str = "",
+):
     papers = list_papers()
     logger.info(f"Found {len(papers)} papers")
 
@@ -134,7 +147,11 @@ def run_all(model_choice: str = "base", start_index: int = 0):
         logger.info(f"[{i+1}/{len(papers)}] Processing: {paper_name}")
         try:
             text = download_paper_text(paper_name)
-            result = run_pipeline(paper_name, text, model_choice)
+            result = run_pipeline(
+                paper_name, text, model_choice,
+                use_ground_truth_theme=use_ground_truth_theme,
+                eval_policy_path=eval_policy_path,
+            )
             all_results.append(result)
 
             (LOCAL_RESULTS / f"{paper_name}.json").write_text(json.dumps(result, indent=2))
@@ -165,9 +182,29 @@ if __name__ == "__main__":
         default=0,
         help="0-based paper index to start from (e.g., 18 skips the first 18 papers)",
     )
+    parser.add_argument(
+        "--ground-truth-theme",
+        action="store_true",
+        default=False,
+        help=(
+            "Agent 1 runs normally, but Agent 2 receives the ground-truth "
+            "jkp_theme from the eval policy instead of Agent 1's output."
+        ),
+    )
+    parser.add_argument(
+        "--eval-policy-path",
+        type=str,
+        default=None,
+        help="Path to eval policy JSON (default: eval/osp_eval_policy_v003.json)",
+    )
     args = parser.parse_args()
 
-    results = run_all(model_choice=args.model, start_index=args.start_index)
+    results = run_all(
+        model_choice=args.model,
+        start_index=args.start_index,
+        use_ground_truth_theme=args.ground_truth_theme,
+        eval_policy_path=args.eval_policy_path or "",
+    )
 
 
 # Example usage:
