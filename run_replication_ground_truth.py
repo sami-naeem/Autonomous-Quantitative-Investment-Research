@@ -15,11 +15,11 @@ to GCS and/or locally.
 GCS layout consumed (upstream, --source gcs):
     gs://investment-research-output/<paper_name>/<model_choice>/<timestamp>.json
 
-Local JSON layout (--source local-json):
-    <json_dir>/osp_eval_policy_v003.json
-    <json_dir>/open_ai_eval_indep_task_2_v001.json
-    Each JSON is a dict keyed by paper name (e.g. "ref_Abarbanell_and_Bushee_1998.pdf")
-    with values {"purpose": ..., "computation_logic": ...}
+Local JSON file (--source local-json):
+    eval/osp_eval_policy_v003.json
+    A single JSON dict keyed by paper name (e.g. "ref_Abarbanell_and_Bushee_1998.pdf")
+    with values containing factor_logic_in_paper.{purpose, computation_logic} or
+    top-level {purpose, computation_logic}.
 
 GCS layout produced (downstream — same folder):
     gs://investment-research-output/<paper_name>/<model_choice>/<timestamp>_replication.json
@@ -32,11 +32,10 @@ Usage:
     python run_replication.py --all --model finllama
 
     # Local JSON ground-truth mode
-    python run_replication.py --source local-json --json-dir ./ground_truth_jsons --paper ref_Abarbanell_and_Bushee_1998
-    python run_replication.py --source local-json --json-dir ./ground_truth_jsons --all
-    python run_replication.py --source local-json --json-dir ./ground_truth_jsons --list-papers
+    python run_replication.py --source local-json --paper ref_Abarbanell_and_Bushee_1998
+    python run_replication.py --source local-json --json-file eval/osp_eval_policy_v003.json --all
+    python run_replication.py --source local-json --list-papers
     python run_replication.py --source local-json --paper ref_Abarbanell_and_Bushee_1998 --prompt-only
-    python run_replication.py --source local-json --paper ref_Abarbanell_and_Bushee_1998 --dry-run
 """
 
 from pathlib import Path
@@ -105,9 +104,11 @@ else:
 #                from local JSON files, matching on paper name key
 INPUT_SOURCE = os.getenv("REPLICATION_INPUT_SOURCE", "gcs")  # "gcs" | "local-json"
 
-# Directory containing ground-truth JSON files when using local-json mode.
-# Files like osp_eval_policy_v003.json, open_ai_eval_indep_task_2_v001.json, etc.
-LOCAL_JSON_DIR = os.getenv("LOCAL_JSON_DIR", "./ground_truth_jsons")
+# Single ground-truth JSON file when using local-json mode.
+# Expected to be a dict keyed by paper name (e.g. "ref_Abarbanell_and_Bushee_1998.pdf")
+# with values containing at minimum {purpose, computation_logic} (and optionally
+# other fields like factor_logic_in_paper, clean_code, etc.).
+LOCAL_JSON_FILE = os.getenv("LOCAL_JSON_FILE", "eval/osp_eval_policy_v003.json")
 
 # ── GCS bucket and layout ────────────────────────────────────────────────
 # All inputs and outputs live in the same bucket under:
@@ -239,54 +240,60 @@ def _normalise_upstream(raw: dict) -> dict:
 # ═════════════════════════════════════════════════════════════════════════
 # 1b. load_inputs_from_json — read ground-truth from local JSON files
 # ═════════════════════════════════════════════════════════════════════════
-def _scan_local_jsons(json_dir: str) -> Dict[str, Dict[str, Any]]:
-    """Scan all .json files in *json_dir* and merge their top-level dicts.
+def _load_local_json(json_file: str) -> Dict[str, Dict[str, Any]]:
+    """Load the single ground-truth JSON file and normalise its keys.
 
-    Each JSON file is expected to be a dict keyed by paper name (with or
-    without .pdf suffix), e.g.:
+    The file is a dict keyed by paper name (with or without .pdf suffix),
+    e.g.:
         {
-          "ref_Abarbanell_and_Bushee_1998.pdf": {"purpose": ..., "computation_logic": ...},
-          "ref_Amihud_2002.pdf": {"purpose": ..., "computation_logic": ...}
+          "ref_Abarbanell_and_Bushee_1998.pdf": {
+            "factor_logic_in_paper": {"purpose": ..., "computation_logic": ...},
+            ...
+          }
         }
 
-    Returns a merged dict: {paper_name_without_pdf: {purpose, computation_logic, ...}}
+    Returns: {paper_name_without_pdf: <entry dict with purpose/computation_logic at top level>}
     """
+    fpath = Path(json_file)
+    if not fpath.exists():
+        raise FileNotFoundError(f"Local JSON file not found: {json_file}")
+
+    with open(fpath) as fh:
+        data = json.load(fh)
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected top-level dict in {json_file}, got {type(data).__name__}")
+
     merged: Dict[str, Dict[str, Any]] = {}
-    json_path = Path(json_dir)
-    if not json_path.exists():
-        logger.warning(f"Local JSON directory does not exist: {json_dir}")
-        return merged
-
-    for f in sorted(json_path.glob("*.json")):
-        try:
-            with open(f) as fh:
-                data = json.load(fh)
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning(f"Skipping {f.name}: {e}")
+    for raw_key, val in data.items():
+        if not isinstance(val, dict):
             continue
+        paper_key = raw_key.removesuffix(".pdf")
 
-        if not isinstance(data, dict):
-            logger.warning(f"Skipping {f.name}: top-level is not a dict")
-            continue
+        # The JSON may nest purpose/computation_logic inside
+        # "factor_logic_in_paper" (like the osp_eval_policy format).
+        # Flatten so downstream code can always find them at top level.
+        flp = val.get("factor_logic_in_paper", {})
+        entry = {**val}  # shallow copy
+        if isinstance(flp, dict):
+            # Promote purpose/computation_logic from nested dict if not already at top level
+            for field in ("purpose", "computation_logic", "inputs", "formulas",
+                          "edge_cases_and_timing", "output_contract", "factor_name"):
+                if field not in entry and field in flp:
+                    entry[field] = flp[field]
 
-        for raw_key, val in data.items():
-            if not isinstance(val, dict):
-                continue
-            # Normalise key: strip .pdf suffix if present
-            paper_key = raw_key.removesuffix(".pdf")
-            # If duplicate, later file wins (alphabetical order)
-            merged[paper_key] = val
+        merged[paper_key] = entry
 
     return merged
 
 
 def load_inputs_from_json(
     paper_name: str,
-    json_dir: str = LOCAL_JSON_DIR,
+    json_file: str = LOCAL_JSON_FILE,
 ) -> Dict[str, Any]:
-    """Load ground-truth purpose + computation_logic from local JSON files.
+    """Load ground-truth purpose + computation_logic from a local JSON file.
 
-    Looks through all JSON files in *json_dir* for a key matching *paper_name*
+    Looks through the JSON file for a key matching *paper_name*
     (with or without .pdf suffix).
 
     Returns a dict shaped like the GCS upstream format so downstream code
@@ -298,7 +305,7 @@ def load_inputs_from_json(
             "factor_extract": {"purpose": ..., "computation_logic": ...}
         }
     """
-    all_papers = _scan_local_jsons(json_dir)
+    all_papers = _load_local_json(json_file)
 
     # Try exact match first, then with .pdf suffix
     entry = all_papers.get(paper_name) or all_papers.get(paper_name + ".pdf")
@@ -310,7 +317,7 @@ def load_inputs_from_json(
     if entry is None:
         available = list(all_papers.keys())[:20]
         raise FileNotFoundError(
-            f"Paper '{paper_name}' not found in local JSONs at '{json_dir}'. "
+            f"Paper '{paper_name}' not found in '{json_file}'. "
             f"Available keys (first 20): {available}"
         )
 
@@ -363,9 +370,9 @@ def _infer_theme_from_text(text: str) -> str:
     return "Unknown"
 
 
-def list_papers_from_json(json_dir: str = LOCAL_JSON_DIR) -> List[str]:
-    """List all paper names available in local ground-truth JSONs."""
-    all_papers = _scan_local_jsons(json_dir)
+def list_papers_from_json(json_file: str = LOCAL_JSON_FILE) -> List[str]:
+    """List all paper names available in the local ground-truth JSON."""
+    all_papers = _load_local_json(json_file)
     return sorted(all_papers.keys())
 
 
@@ -1164,7 +1171,7 @@ def process_single(
     prompt_only: bool = False,
     data_dir: str = DATA_DIR,
     input_source: str = INPUT_SOURCE,
-    json_dir: str = LOCAL_JSON_DIR,
+    json_file: str = LOCAL_JSON_FILE,
 ) -> Dict[str, Any]:
     """Process one paper end-to-end."""
     logger.info("=" * 70)
@@ -1173,7 +1180,7 @@ def process_single(
 
     # ── Load upstream ────────────────────────────────────────────────
     if input_source == "local-json":
-        upstream = load_inputs_from_json(paper_name, json_dir=json_dir)
+        upstream = load_inputs_from_json(paper_name, json_file=json_file)
     else:
         upstream = load_inputs(paper_name, model_choice=model_choice)
 
@@ -1236,11 +1243,11 @@ def process_all(
     dry_run: bool = False,
     data_dir: str = DATA_DIR,
     input_source: str = INPUT_SOURCE,
-    json_dir: str = LOCAL_JSON_DIR,
+    json_file: str = LOCAL_JSON_FILE,
 ) -> List[Dict[str, Any]]:
     """Process every paper that has upstream outputs."""
     if input_source == "local-json":
-        papers = list_papers_from_json(json_dir=json_dir)
+        papers = list_papers_from_json(json_file=json_file)
     else:
         papers = list_papers_with_upstream(model_filter=model_choice)
     total = len(papers)
@@ -1262,7 +1269,7 @@ def process_all(
                 paper_name, model_choice=model_choice,
                 max_retries=max_retries, timeout=timeout,
                 dry_run=dry_run, data_dir=data_dir,
-                input_source=input_source, json_dir=json_dir,
+                input_source=input_source, json_file=json_file,
             )
             all_results.append(result)
         except Exception as e:
@@ -1334,18 +1341,18 @@ def main():
         ),
     )
     parser.add_argument(
-        "--json-dir", type=str, default=LOCAL_JSON_DIR,
+        "--json-file", type=str, default=LOCAL_JSON_FILE,
         help=(
-            "Directory containing ground-truth JSON files when using "
-            f"--source local-json (default: {LOCAL_JSON_DIR})."
+            "Path to ground-truth JSON file when using "
+            f"--source local-json (default: {LOCAL_JSON_FILE})."
         ),
     )
     args = parser.parse_args()
 
     if args.list_papers:
         if args.source == "local-json":
-            papers = list_papers_from_json(json_dir=args.json_dir)
-            print(f"\nPapers in local JSONs ({len(papers)}, dir={args.json_dir}):\n")
+            papers = list_papers_from_json(json_file=args.json_file)
+            print(f"\nPapers in local JSON ({len(papers)}, file={args.json_file}):\n")
         else:
             papers = list_papers_with_upstream(model_filter=args.model)
             print(f"\nPapers with upstream outputs ({len(papers)}, model={args.model}):\n")
@@ -1362,7 +1369,7 @@ def main():
             max_retries=args.max_retries, timeout=args.timeout,
             dry_run=args.dry_run, prompt_only=args.prompt_only,
             data_dir=args.data_dir,
-            input_source=args.source, json_dir=args.json_dir,
+            input_source=args.source, json_file=args.json_file,
         )
         status = result.get("status", "unknown")
         print(f"\n{'=' * 70}")
@@ -1384,7 +1391,7 @@ def main():
             start_index=args.start_index,
             dry_run=args.dry_run,
             data_dir=args.data_dir,
-            input_source=args.source, json_dir=args.json_dir,
+            input_source=args.source, json_file=args.json_file,
         )
         successes = sum(1 for r in results if r.get("status") == "success")
         failures = sum(1 for r in results if r.get("status") == "failed")
