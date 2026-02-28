@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-eval_all.py — Pull agent outputs from GCS, fetch OSP reference code from GitHub,
-              and evaluate agent performance against ground truth.
+eval_all.py — Pull agent outputs from GCS and evaluate agent performance
+              against ground truth from osp_eval_policy.
+
+All ground truth (theme, factor logic, and reference code) comes from a single
+policy JSON file (osp_eval_policy_v003.json). No external GitHub fetch needed.
 
 Three evaluation tasks:
   Task 1: theme_pick — exact match of agent theme vs ground truth jkp_theme
   Task 2: factor_extract — OpenAI 1-5 scoring of purpose & computation_logic
-  Task 3: replication code — OpenAI 1-5 scoring of agent _code.py vs OSP reference .py
+           (ground truth from factor_logic_in_paper in policy file)
+  Task 3: replication code — OpenAI 1-5 scoring of agent _code.py vs clean_code
+           (reference code from clean_code field in policy file)
 
 GCS layout:
     <paper>/<model>/<timestamp>.json          — agent task 1+2 outputs
@@ -27,9 +32,7 @@ import json
 import logging
 import os
 import re
-import subprocess
 import sys
-import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,15 +70,11 @@ GCS_CREDENTIALS_PATH = os.getenv(
 OUTPUT_BUCKET = os.getenv("GCS_OUTPUT_BUCKET", "investment-research-output")
 MODEL_CHOICES = ["base", "custom", "finllama"]
 
-GROUND_TRUTH_TASK1 = os.getenv("GROUND_TRUTH_TASK1", "osp_eval_policy_v003.json")
-GROUND_TRUTH_TASK2 = os.getenv("GROUND_TRUTH_TASK2", "open_ai_eval_indep_task_2_v001.json")
+GROUND_TRUTH_FILE = os.getenv("GROUND_TRUTH_FILE", "osp_eval_policy_v003.json")
 
 AGENT_OUTPUTS_FILE = "agent_outputs.json"
 EVAL_RESULTS_FILE = "eval_results.json"
 EVAL_SUMMARY_FILE = "eval_summary.json"
-
-OSP_REPO_URL = "https://github.com/OpenSourceAP/CrossSection.git"
-OSP_PREDICTORS_SUBDIR = "Signals/pyCode/Predictors"
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -98,14 +97,6 @@ def get_gcs_client() -> storage.Client:
 # ═════════════════════════════════════════════════════════════════════════
 def normalize_paper_name(name: str) -> str:
     return name.replace(".pdf", "")
-
-
-def build_paper_name_map(gt_task1: Dict, gt_task2: Dict) -> Dict[str, str]:
-    """normalized name (no .pdf) -> gt key (with .pdf)"""
-    name_map = {}
-    for key in set(gt_task1.keys()) | set(gt_task2.keys()):
-        name_map[normalize_paper_name(key)] = key
-    return name_map
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -236,50 +227,17 @@ def pull_all_outputs(
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# OSP Reference Code from GitHub
+# Reference Code Lookup (from clean_code in policy file)
 # ═════════════════════════════════════════════════════════════════════════
-def fetch_osp_code(local_dir: Optional[str] = None) -> Dict[str, str]:
-    """Fetch OSP predictor .py files. Returns {filename: code_content}."""
-    # Check local dir first
-    if local_dir:
-        pred_dir = Path(local_dir)
-        if not any(pred_dir.glob("*.py")):
-            pred_dir = pred_dir / OSP_PREDICTORS_SUBDIR
-        if pred_dir.exists() and any(pred_dir.glob("*.py")):
-            logger.info(f"Using local OSP predictors from {pred_dir}")
-            return {f.name: f.read_text(errors="replace") for f in sorted(pred_dir.glob("*.py"))}
-
-    # Sparse clone from GitHub
-    clone_dir = Path(tempfile.mkdtemp(prefix="osp_"))
-    logger.info(f"Cloning OSP repo (sparse) into {clone_dir}...")
-    try:
-        subprocess.run(
-            ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse",
-             OSP_REPO_URL, str(clone_dir)],
-            check=True, capture_output=True, text=True, timeout=120,
-        )
-        subprocess.run(
-            ["git", "sparse-checkout", "set", OSP_PREDICTORS_SUBDIR],
-            cwd=str(clone_dir), check=True, capture_output=True, text=True,
-        )
-        pred_dir = clone_dir / OSP_PREDICTORS_SUBDIR
-        code_map = {f.name: f.read_text(errors="replace") for f in sorted(pred_dir.glob("*.py"))}
-        logger.info(f"Fetched {len(code_map)} OSP predictor files from GitHub")
-        return code_map
-    except Exception as e:
-        logger.error(f"Failed to fetch OSP code: {e}")
-        return {}
-
-
-def build_osp_lookup(gt_task1: Dict, osp_code_map: Dict[str, str]) -> Dict[str, str]:
-    """paper_name (no .pdf) -> OSP reference code string."""
+def build_code_lookup(gt: Dict) -> Dict[str, str]:
+    """paper_name (no .pdf) -> clean_code string from policy file."""
     lookup = {}
-    for gt_key, entry in gt_task1.items():
-        code_file = entry.get("osp_code_filename", "")
-        paper = normalize_paper_name(gt_key)
-        if code_file and code_file in osp_code_map:
-            lookup[paper] = osp_code_map[code_file]
-    logger.info(f"OSP code lookup: {len(lookup)}/{len(gt_task1)} papers matched")
+    for gt_key, entry in gt.items():
+        code = entry.get("clean_code", "")
+        if code:
+            paper = normalize_paper_name(gt_key)
+            lookup[paper] = code
+    logger.info(f"Reference code lookup: {len(lookup)}/{len(gt)} papers have clean_code")
     return lookup
 
 
@@ -513,14 +471,15 @@ def get_judge(model: str = "gpt-4o-mini") -> OpenAIJudge:
 # ═════════════════════════════════════════════════════════════════════════
 # Evaluation Functions
 # ═════════════════════════════════════════════════════════════════════════
-def load_ground_truth(t1_path: str, t2_path: str) -> Tuple[Dict, Dict, Dict[str, str]]:
-    with open(t1_path) as f:
-        gt1 = json.load(f)
-    with open(t2_path) as f:
-        gt2 = json.load(f)
-    name_map = build_paper_name_map(gt1, gt2)
-    logger.info(f"Ground truth loaded: Task1={len(gt1)}, Task2={len(gt2)}")
-    return gt1, gt2, name_map
+def load_ground_truth(gt_path: str) -> Tuple[Dict, Dict[str, str]]:
+    """Load single policy file. Returns (gt_dict, name_map)."""
+    with open(gt_path) as f:
+        gt = json.load(f)
+    name_map = {}
+    for key in gt.keys():
+        name_map[normalize_paper_name(key)] = key
+    logger.info(f"Ground truth loaded: {len(gt)} papers from {gt_path}")
+    return gt, name_map
 
 
 def eval_theme(agent_theme: Dict, gt_entry: Dict) -> Dict:
@@ -538,13 +497,16 @@ def eval_theme(agent_theme: Dict, gt_entry: Dict) -> Dict:
 
 
 def eval_factor(
-    agent_factor: Dict, gt2_entry: Dict, gt1_entry: Dict,
+    agent_factor: Dict, gt_entry: Dict,
     use_sim: bool, use_llm: bool, llm_model: str,
 ) -> Dict:
     ap = agent_factor.get("purpose", "") or ""
-    gp = gt2_entry.get("purpose", "") or ""
     al = agent_factor.get("computation_logic", "") or ""
-    gl = gt2_entry.get("computation_logic", "") or ""
+
+    # Ground truth purpose and logic come from factor_logic_in_paper
+    flp = gt_entry.get("factor_logic_in_paper", {})
+    gp = flp.get("purpose", "") or ""
+    gl = flp.get("computation_logic", "") or ""
 
     result = {
         "agent_purpose": ap, "gt_purpose": gp,
@@ -605,8 +567,8 @@ def eval_code(
 # ═════════════════════════════════════════════════════════════════════════
 def run_eval(
     agent_outputs: List[Dict],
-    gt_task1: Dict, gt_task2: Dict, name_map: Dict[str, str],
-    osp_lookup: Dict[str, str],
+    gt: Dict, name_map: Dict[str, str],
+    code_lookup: Dict[str, str],
     use_sim: bool = True, use_llm: bool = True, llm_model: str = "gpt-4o-mini",
 ) -> Tuple[List[Dict], Dict]:
 
@@ -648,17 +610,17 @@ def run_eval(
         eval_i += 1
         logger.info(f"  [{eval_i}/{matched_count}] {paper}/{model}")
 
+        gt_entry = gt.get(gt_key, {})
+
         # Task 1: theme
-        gt1 = gt_task1.get(gt_key, {})
-        t1 = eval_theme(agent.get("theme_pick", {}), gt1)
+        t1 = eval_theme(agent.get("theme_pick", {}), gt_entry)
         entry["task1"] = t1
         if t1["theme_match"]:
             summary["by_model"][model]["theme_correct"] += 1
 
-        # Task 2: factor extract
-        gt2 = gt_task2.get(gt_key, {})
+        # Task 2: factor extract (purpose + computation_logic from factor_logic_in_paper)
         t2 = eval_factor(
-            agent.get("factor_extract", {}), gt2, gt1,
+            agent.get("factor_extract", {}), gt_entry,
             use_sim=use_sim, use_llm=use_llm, llm_model=llm_model,
         )
         entry["task2"] = t2
@@ -667,9 +629,9 @@ def run_eval(
             ls = t2.get("logic_llm_score", "?")
             logger.info(f"    Task2 LLM: purpose={ps}/5, logic={ls}/5")
 
-        # Task 3: code comparison
+        # Task 3: code comparison (agent code vs clean_code from policy file)
         agent_code = agent.get("agent_code")
-        ref_code = osp_lookup.get(paper)
+        ref_code = code_lookup.get(paper)
         if agent_code:
             summary["by_model"][model]["has_code"] += 1
         t3 = eval_code(
@@ -808,7 +770,7 @@ def print_summary(summary: Dict):
 # ═════════════════════════════════════════════════════════════════════════
 def main():
     parser = argparse.ArgumentParser(
-        description="Pull agent outputs from GCS + OSP code from GitHub, evaluate all tasks."
+        description="Pull agent outputs from GCS, evaluate all tasks against policy file."
     )
     parser.add_argument("--pull", action="store_true", help="Pull agent outputs from GCS")
     parser.add_argument("--eval", action="store_true", help="Run evaluation")
@@ -818,14 +780,12 @@ def main():
                         help="Paper names to exclude from pull and evaluation")
     parser.add_argument("--models", nargs="+", default=None, choices=MODEL_CHOICES)
     parser.add_argument("--agent-outputs", default=AGENT_OUTPUTS_FILE)
-    parser.add_argument("--gt-task1", default=GROUND_TRUTH_TASK1)
-    parser.add_argument("--gt-task2", default=GROUND_TRUTH_TASK2)
+    parser.add_argument("--gt", default=GROUND_TRUTH_FILE,
+                        help="Path to ground truth policy JSON (default: osp_eval_policy_v003.json)")
     parser.add_argument("--output-dir", default=".")
     parser.add_argument("--no-similarity", action="store_true")
     parser.add_argument("--no-llm-judge", action="store_true")
     parser.add_argument("--llm-model", default="gpt-4o-mini")
-    parser.add_argument("--osp-local-dir", default=None,
-                        help="Path to local CrossSection repo (skip git clone)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -886,17 +846,16 @@ def main():
                 logger.info(f"Excluded {before - len(agent_outputs)} outputs "
                             f"({len(exclude_set)} papers) during eval")
 
-        gt1, gt2, name_map = load_ground_truth(args.gt_task1, args.gt_task2)
+        gt, name_map = load_ground_truth(args.gt)
 
-        # Fetch OSP reference code
-        osp_code = fetch_osp_code(args.osp_local_dir)
-        osp_lookup = build_osp_lookup(gt1, osp_code) if osp_code else {}
+        # Build reference code lookup from clean_code in policy file
+        code_lookup = build_code_lookup(gt)
 
         use_sim = not args.no_similarity
         use_llm = not args.no_llm_judge
 
         eval_results, summary = run_eval(
-            agent_outputs, gt1, gt2, name_map, osp_lookup,
+            agent_outputs, gt, name_map, code_lookup,
             use_sim=use_sim, use_llm=use_llm, llm_model=args.llm_model,
         )
 
