@@ -101,12 +101,8 @@ Returns relevant paper paragraphs for short keyword queries.
 
 === CRITICAL SEARCH RULES ===
 GOOD queries use paper-specific nouns that appear in the actual text:
-  "book-to-market", "revenue surprise", "accrual", "earnings announcement",
-  "decile portfolio", "quintile sort", "holding period", "Fama-MacBeth"
 
 BAD queries use generic/abstract terms that score 0.0 in BM25:
-  "defined as", "computation logic", "construction detail", "timing",
-  "factor definition", "methodology overview"
 
 NEVER repeat a query you already used. If a query returned nothing useful, try
 a DIFFERENT term — do not re-submit the same words.
@@ -117,13 +113,9 @@ specific nouns or phrases (e.g. "revenue surprise", "book-to-market ratio",
 "financial constraints index", "earnings persistence"). Use those as your first queries.
 
 STEP 1 (1-2 calls): Search for the paper's MAIN VARIABLE or SIGNAL.
-  Use the specific noun from the abstract, e.g. "revenue surprise", "KZ index",
-  "book-to-market", "momentum return", "accrual ratio".
-  Also try: "sort", "portfolio", "decile", "quintile" combined with the signal name.
+  Use the specific noun from the abstract.
 
 STEP 2 (1-2 calls): Search for CONSTRUCTION DETAILS.
-  Try: "rebalance", "holding period", "monthly return", "annual",
-  "NYSE breakpoint", "value-weighted", "equal-weighted", "lag".
 
 STEP 3: STOP. Return your final JSON. Use "missing_or_unclear" for anything not found.
 
@@ -141,16 +133,9 @@ already have enough information. Finish early when possible.
 
 "computation_logic" (REQUIRED — 2-5 short paragraphs):
   Describe HOW to compute the factor step-by-step, in enough detail that a
-  programmer could implement it. Cover as many of these as the paper supports:
-    - What is the raw variable? (e.g. book equity / market equity)
-    - Data source timing (e.g. fiscal year-end data, lagged 6 months)
-    - Sorting/ranking method (e.g. decile sort, quintile sort, median split)
-    - Breakpoints (e.g. NYSE median, all-stock median)
-    - Portfolio construction (e.g. long top decile, short bottom decile)
-    - Weighting (e.g. value-weighted, equal-weighted)
-    - Holding period and rebalancing frequency (e.g. held 6 months, rebalanced monthly)
-    - Filters/exclusions (e.g. exclude financials, exclude micro-caps)
-    - Industry adjustments if any
+  programmer could implement it. Combine what the paper explicitly states with
+  standard conventions from the empirical asset pricing literature where the
+  paper is silent on implementation details.
 
   STYLE RULES:
   - Plain English prose only. No LaTeX, no math symbols, no dollar signs around numbers.
@@ -158,30 +143,17 @@ already have enough information. Finish early when possible.
   - No bullet points or numbered lists. Use short paragraphs (2-4 sentences each).
   - Do NOT copy paper results (returns, t-statistics, p-values). Focus on the METHOD.
   - Do NOT hallucinate details not in the paper. If the paper does not specify
-    a detail (e.g. breakpoints), say so or omit it. Never invent repetitive
-    variations (e.g. "also calculated on a 5-year, 10-year, 15-year basis").
+    a detail, either apply the standard approach from the literature or say
+    "not specified." Never invent repetitive variations.
   - Avoid dataset-specific mnemonics (COMPUSTAT item numbers, CRSP codes).
     Use plain English: "total assets" not "data item 6".
   Minimum 30 words.
 
 === SCHEMA (return EXACTLY this structure) ===
 {{
-  "purpose": "The factor measures/captures...",
-  "computation_logic": "To construct this factor, first compute... Then sort... The long-short portfolio..."
+  "purpose": "",
+  "computation_logic": ""
 }}
-
-=== GOOD EXAMPLE OUTPUT ===
-{{
-  "purpose": "The factor captures the value premium by measuring how cheap a stock is relative to its book value. Stocks with high book-to-market ratios have historically earned higher returns than growth stocks.",
-  "computation_logic": "At the end of each June, compute the book-to-market ratio for each stock using book equity from the prior fiscal year-end divided by market equity as of December of the prior year. This six-month lag ensures the accounting data is publicly available at the time of portfolio formation.\\n\\nSort all NYSE, AMEX, and NASDAQ stocks into deciles based on NYSE breakpoints for the book-to-market ratio. The factor portfolio goes long the top decile (highest book-to-market, i.e., deep value) and short the bottom decile (lowest book-to-market, i.e., growth).\\n\\nPortfolios are value-weighted and held for twelve months from July through the following June, then rebalanced annually."
-}}
-
-=== BAD EXAMPLE OUTPUT (do NOT produce anything like this) ===
-{{
-  "purpose": "# Information Uncertainty and Expected Returns\\n\\nGUOHUA JIANG\\n\\nGuanghua School of Management...",
-  "computation_logic": "This table summarizes three-factor regression results for monthly returns on earnings momentum..."
-}}
-The above is bad because purpose contains the paper title/authors and computation_logic describes a results table rather than construction steps.
 
 ABSTRACT:
 {abstract}
