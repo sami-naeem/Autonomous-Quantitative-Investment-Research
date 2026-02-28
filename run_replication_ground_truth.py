@@ -585,8 +585,6 @@ DATA_GUIDELINES = textwrap.dedent("""\
     Working with SF1 (fundamentals):
       - Filter dimension=='ARQ' for quarterly data
       - Date column is 'calendardate' NOT 'date'
-      - Always lag fundamental data to avoid look-ahead bias — use pd.merge_asof
-        or ensure you only use data available BEFORE the signal/rebalance date
 
     CRITICAL WARNINGS:
       - NEVER merge large DataFrames on just 'ticker' without 'date' — causes cartesian explosion
@@ -671,19 +669,21 @@ def build_prompt(
         {DATA_GUIDELINES}
 
         IMPLEMENTATION:
-        - Read the factor description carefully and implement the signal construction,
-          portfolio formation, and return calculation as described in the paper.
-        - Choose the portfolio construction approach that best matches the paper:
-          cross-sectional sorts, time-series signals, event-driven, hedged portfolios, etc.
+        - Study the factor description and identify the core signal, portfolio formation
+          methodology, and holding period described in the paper.
+        - Apply your knowledge of the empirical asset pricing literature to fill in
+          any gaps: standard cross-sectional sorts, appropriate rebalance frequencies,
+          and proper treatment of look-ahead bias and data availability lags.
+        - Use the portfolio construction approach that most faithfully matches the paper.
         - If the paper uses decile/quantile sorts, implement long-short (top vs bottom).
-          If it uses a different approach, follow that instead.
-        - Use the appropriate rebalance frequency described in the paper (monthly, quarterly, annual).
-          Default to monthly if unspecified.
-        - Make reasonable simplifications where needed (e.g., equal-weight if the paper
-          uses value-weight but the implementation would be significantly more complex).
+          If the paper specifies a different methodology, follow that.
+        - Use the rebalance frequency described in the paper.
+        - Make reasonable simplifications where needed.
 
         OUTPUT REQUIREMENTS:
         - Save 'returns.csv' with columns: date (YYYY-MM-DD), strategy_returns (float)
+        - The strategy_returns should represent the long-short spread return (or long-only
+          if the paper is long-only) at the strategy's rebalance frequency
         - Print "Backtest complete. Rows: N" and first/last 5 rows of the returns
 
         RULES:
@@ -696,10 +696,17 @@ def build_prompt(
 
 
 SYSTEM_MSG = (
-    "You are an expert quantitative finance researcher and Python developer. "
-    "You write clean, efficient backtest code using pandas and numpy against real Sharadar data. "
-    "You faithfully replicate the strategy described in the paper, choosing the most appropriate "
-    "portfolio construction methodology. "
+    "You are a senior quantitative researcher replicating published factor strategies. "
+    "You have deep expertise in cross-sectional asset pricing, Fama-French factor construction, "
+    "portfolio sorts, and anomaly replication from academic finance papers. "
+    "When implementing a factor, apply your knowledge of standard methodologies: "
+    "Fama-MacBeth regressions, independent double sorts, NYSE breakpoints, "
+    "value-weighted vs equal-weighted portfolio returns, and proper treatment of "
+    "look-ahead bias, survivorship bias, and rebalancing conventions. "
+    "If the paper's description is ambiguous, fall back on standard conventions from the "
+    "empirical asset pricing literature (e.g., monthly rebalancing, quintile sorts, "
+    "lagging fundamentals by at least one quarter). "
+    "Write clean, self-contained Python code using pandas and numpy against real Sharadar data. "
     "Return ONLY executable Python code. No markdown fences. No explanations."
 )
 

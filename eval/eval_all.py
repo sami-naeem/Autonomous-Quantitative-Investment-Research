@@ -859,12 +859,20 @@ def main():
             use_sim=use_sim, use_llm=use_llm, llm_model=args.llm_model,
         )
 
-        # Save
+        # Save with timestamp
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        results_file = f"eval_results_{ts}.json"
+        summary_file = f"eval_summary_{ts}.json"
+        with open(out_dir / results_file, "w") as f:
+            json.dump(eval_results, f, indent=2, default=str)
+        with open(out_dir / summary_file, "w") as f:
+            json.dump(summary, f, indent=2, default=str)
+        # Also write to static filenames for convenience (latest run)
         with open(out_dir / EVAL_RESULTS_FILE, "w") as f:
             json.dump(eval_results, f, indent=2, default=str)
         with open(out_dir / EVAL_SUMMARY_FILE, "w") as f:
             json.dump(summary, f, indent=2, default=str)
-        logger.info(f"Saved results to {EVAL_RESULTS_FILE} and {EVAL_SUMMARY_FILE}")
+        logger.info(f"Saved results to {results_file} and {summary_file} (+ latest symlinks)")
 
         print_summary(summary)
 
