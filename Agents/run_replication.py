@@ -991,7 +991,6 @@ def save_outputs(artifact: Dict[str, Any]) -> str:
 def list_papers_with_upstream(model_filter: Optional[str] = None) -> List[str]:
     """List paper names that have upstream agent outputs in GCS."""
     paper_names: Set[str] = set()
-
     client = _get_gcs_client()
     if client is None:
         logger.error("Cannot list papers: GCS client unavailable.")
@@ -1092,6 +1091,7 @@ def process_single(
 
 def process_all(
     model_choice: str = DEFAULT_MODEL,
+    upstream_model_choice: str = DEFAULT_MODEL,
     max_retries: int = DEFAULT_MAX_RETRIES,
     timeout: int = DEFAULT_TIMEOUT,
     start_index: int = 0,
@@ -1099,9 +1099,9 @@ def process_all(
     data_dir: str = DATA_DIR,
 ) -> List[Dict[str, Any]]:
     """Process every paper that has upstream outputs."""
-    papers = list_papers_with_upstream(model_filter=model_choice)
+    papers = list_papers_with_upstream(model_filter=upstream_model_choice)
     total = len(papers)
-    logger.info(f"Found {total} papers (model={model_choice})")
+    logger.info(f"Found {total} papers (model={upstream_model_choice})")
 
     if start_index < 0:
         raise ValueError("--start-index must be >= 0")
@@ -1116,7 +1116,7 @@ def process_all(
         logger.info(f"\n[{i + 1}/{total}] {paper_name}")
         try:
             result = process_single(
-                paper_name, model_choice=model_choice,
+                paper_name, model_choice=model_choice, upstream_model_choice=upstream_model_choice,
                 max_retries=max_retries, timeout=timeout,
                 dry_run=dry_run, data_dir=data_dir,
             )
@@ -1188,10 +1188,10 @@ def main():
 
     upstream_model = args.upstream_model or args.model # use upstream_model if provided else the model
     # now upstream_model will be used to filter out data from upstream and the model will be used for generation
-    
+   
     if args.list_papers:
-        papers = list_papers_with_upstream(model_filter=args.model)
-        print(f"\nPapers with upstream outputs ({len(papers)}, model={args.model}):\n")
+        papers = list_papers_with_upstream(model_filter=upstream_model)
+        print(f"\nPapers with upstream outputs ({len(papers)}, model={upstream_model}):\n")
         for i, p in enumerate(papers):
             print(f"  [{i:3d}] {p}")
         return
@@ -1221,7 +1221,7 @@ def main():
 
     if args.all:
         results = process_all(
-            model_choice=args.model,
+            upstream_model_choice=upstream_model, model_choice=args.model,
             max_retries=args.max_retries, timeout=args.timeout,
             start_index=args.start_index,
             dry_run=args.dry_run,

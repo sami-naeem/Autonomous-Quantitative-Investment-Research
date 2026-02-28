@@ -3,6 +3,7 @@
 
 # Credentials
 credentials.json
+service-account-key.json
 
 # Papers folder
 /papers
