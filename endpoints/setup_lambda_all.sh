@@ -294,6 +294,7 @@ else
         langgraph.json \
         requirements.txt \
         run_code_replication.py \
+        run_replication_ground_truth.py \
         endpoints \
         .env.example
 fi
