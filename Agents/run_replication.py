@@ -387,56 +387,117 @@ def select_tables(
 # 2. build_prompt — strategy description + data catalog + pandas pattern
 # ═════════════════════════════════════════════════════════════════════════
 PANDAS_PATTERN = textwrap.dedent("""\
-    REQUIRED CODE STRUCTURE (follow this pattern exactly):
+ REQUIRED CODE STRUCTURE (follow this pattern exactly):
 
-    Step 1: Load universe and prices
-      tickers = pd.read_csv(TICKERS_PATH)
-      tickers = tickers[(tickers['table']=='SEP') & (tickers['isdelisted']=='N') & (tickers['category']=='Domestic Common Stock')]
-      valid = set(tickers['ticker'].unique())
-      prices = pd.read_csv(SEP_PATH, usecols=['ticker','date','closeadj'], parse_dates=['date'])
-      prices = prices[prices['ticker'].isin(valid)].sort_values(['ticker','date'])
+Step 1: Load universe and prices
+  tickers = pd.read_csv(TICKERS_PATH)
+  tickers = tickers[(tickers['table']=='SEP') & (tickers['isdelisted']=='N') & (tickers['category']=='Domestic Common Stock')]
+  valid = set(tickers['ticker'].unique())
+  prices = pd.read_csv(SEP_PATH, usecols=['ticker','date','closeadj'], parse_dates=['date'])
+  prices = prices[prices['ticker'].isin(valid)].sort_values(['ticker','date'])
 
-    Step 2: Pivot to wide format (index=date, columns=tickers, values=closeadj)
-      wide = prices.pivot_table(index='date', columns='ticker', values='closeadj')
-      wide = wide.ffill()
+Step 2: Pivot to wide format (index=date, columns=tickers, values=closeadj)
+  wide = prices.pivot(index='date', columns='ticker', values='closeadj')
+  wide = wide.sort_index()
+  wide = wide.ffill()
 
-    Step 3: Compute monthly prices and returns
-      monthly = wide.resample('ME').last()
-      monthly_ret = monthly.pct_change()
+Step 3: Compute monthly prices and returns (USE 'ME' ONLY)
+  monthly = wide.resample('ME').last()
+  monthly_ret = monthly.pct_change()
 
-    Step 4: Compute signal at each month (YOUR STRATEGY LOGIC HERE)
-      - The signal should be a DataFrame with same shape as monthly (index=date, columns=tickers)
-      - If the paper uses fundamental data, load SF1, merge onto the monthly grid
-        by (ticker, nearest prior calendardate), and compute your signal.
-      - If the paper uses daily data (volatility, etc.), compute per-stock first,
-        then resample to monthly.
+Step 4: Compute signal at each month (YOUR STRATEGY LOGIC HERE)
+  The signal MUST be a DataFrame with the same shape/labels as monthly:
+    signal = pd.DataFrame(index=monthly.index, columns=monthly.columns, dtype='float64')
 
-    Step 5: For each month, rank into deciles and compute long-short return
-      results = []
-      for t in range(len(monthly_ret)):
-          sig = signal.iloc[t].dropna()
-          ret = monthly_ret.iloc[t].dropna()
-          common = sig.index.intersection(ret.index)
-          if len(common) < 20: continue
-          sig, ret = sig[common], ret[common]
-          deciles = pd.qcut(sig.rank(method='first'), 10, labels=False, duplicates='drop')
-          long_ret = ret[deciles == deciles.max()].mean()
-          short_ret = ret[deciles == deciles.min()].mean()
-          results.append({'date': monthly_ret.index[t], 'strategy_returns': long_ret - short_ret})
+  If the paper uses SF1 fundamentals, you MUST align quarterly data onto the monthly grid like this:
 
-    Step 6: Save output
-      out = pd.DataFrame(results)
+    sf1 = pd.read_csv(SF1_PATH, parse_dates=['calendardate'])
+    sf1 = sf1[sf1['dimension']=='ARQ']
+    sf1 = sf1[sf1['ticker'].isin(valid)].sort_values(['ticker','calendardate'])
+
+    month_df = monthly.index.to_frame(index=False, name='date')
+
+    for ticker in monthly.columns:
+        td = sf1[sf1['ticker']==ticker][['calendardate', <FIELDS_YOU_NEED>]].dropna(subset=['calendardate'])
+        if td.empty:
+            continue
+        td = td.sort_values('calendardate')
+
+        m = pd.merge_asof(
+            month_df,
+            td,
+            left_on='date',
+            right_on='calendardate',
+            direction='backward'
+        )
+
+        # CRITICAL: assign positionally to avoid index-alignment NaNs
+        signal[ticker] = m[<SIGNAL_COLUMN>].to_numpy()
+
+  After building signal you MUST compute and STORE (do NOT print) diagnostics:
+    signal_coverage = float(signal.notna().mean().mean())
+
+Step 5: For each month, rank into deciles and compute long-short return
+  results = []
+  skipped_common_lt20 = 0
+  common_sizes = []
+
+  for t in range(len(monthly_ret)):
+      sig = signal.iloc[t].dropna()
+      ret = monthly_ret.iloc[t].dropna()
+      common = sig.index.intersection(ret.index)
+
+      common_sizes.append(len(common))
+      if len(common) < 20:
+          skipped_common_lt20 += 1
+          continue
+
+      sig, ret = sig[common], ret[common]
+      deciles = pd.qcut(sig.rank(method='first'), 10, labels=False, duplicates='drop')
+      long_ret = ret[deciles == deciles.max()].mean()
+      short_ret = ret[deciles == deciles.min()].mean()
+      results.append({'date': monthly_ret.index[t], 'strategy_returns': long_ret - short_ret})
+
+  avg_common = float(np.mean(common_sizes)) if common_sizes else 0.0
+
+Step 6: Save output (ALWAYS CREATE returns.csv)
+  out = pd.DataFrame(results)
+
+  if not out.empty:
       out['date'] = pd.to_datetime(out['date']).dt.strftime('%Y-%m-%d')
-      out.to_csv('returns.csv', index=False)
-      print("METRICS:", json.dumps({...}))
+  else:
+      out = pd.DataFrame(columns=['date','strategy_returns'])
 
-    CRITICAL WARNINGS:
-    - NEVER merge large DataFrames on just 'ticker' without 'date' — causes cartesian product / memory explosion
-    - NEVER use groupby().apply() to compute cumulative returns — use pivot + vectorized ops instead
-    - The wide format (pivot_table) is the correct pattern — work with it, don't merge back
-    - monthly.shift(1) gives LAST month's price — use shifts to avoid look-ahead bias
-    - For fundamental signals, always use the MOST RECENT fundamental data AVAILABLE BEFORE
-      the signal date (pd.merge_asof or manual lag) — never look ahead\
+  out.to_csv('returns.csv', index=False)
+
+Step 7: Metrics (MUST store as a single JSON object printed on one line)
+  Build a dict called metrics_dict that ALWAYS includes these diagnostics:
+    - 'signal_coverage': signal_coverage
+    - 'skipped_common_lt20': skipped_common_lt20
+    - 'avg_common': avg_common
+    - 'rows': int(len(out))
+
+  If len(out) > 0, ALSO include:
+    - 'sharpe_ratio'
+    - 'annualized_return'
+    - 'total_return'
+    - 'max_drawdown'
+    - 'n_months'
+
+  If len(out) == 0, set the performance metrics to None.
+
+  Finally, print EXACTLY ONE LINE in this format (no other prints):
+    print("METRICS:", json.dumps(metrics_dict))
+
+CRITICAL WARNINGS:
+- NEVER merge large DataFrames on just 'ticker' without 'date' — causes cartesian product / memory explosion
+- NEVER use groupby().apply() to compute cumulative returns — use pivot + vectorized ops instead
+- The wide format (pivot) is the correct pattern — work with it, don't merge back to long unless necessary
+- Use shifts/lags to avoid look-ahead bias; for fundamentals ALWAYS use the MOST RECENT value AVAILABLE BEFORE the signal date
+- For pd.merge_asof you MUST:
+    (1) sort by the date key
+    (2) use direction='backward'
+    (3) assign with .to_numpy() to avoid index-alignment NaNs\
 """)
 
 
