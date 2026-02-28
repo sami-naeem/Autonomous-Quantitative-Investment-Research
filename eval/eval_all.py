@@ -318,43 +318,124 @@ def get_scorer() -> SimilarityScorer:
 # OpenAI LLM-as-Judge (1-5 scale)
 # ═════════════════════════════════════════════════════════════════════════
 PURPOSE_PROMPT = """\
-You are an expert evaluator for quantitative finance factor research.
+You are an expert evaluator for quantitative finance factor research, \
+specializing in academic paper replication and factor construction.
 
-Score the agent's factor PURPOSE description from 1 to 5 vs ground truth:
-1 = Completely wrong — describes a different factor entirely
-2 = Partially relevant — right general area but misses core mechanism
-3 = Acceptable — captures general idea but vague or minor inaccuracies
-4 = Good — accurately captures main purpose, minor omissions
-5 = Excellent — fully and accurately captures purpose and key mechanisms
+Score the agent's factor PURPOSE description from 1 to 5 vs ground truth.
+
+Focus on:
+- Whether the agent captures the ECONOMIC MECHANISM or hypothesis behind the factor \
+(e.g., risk-based vs behavioral, why the factor should predict returns)
+- Whether the agent identifies the correct ASSET PRICING CONTEXT \
+(cross-sectional return prediction, portfolio sorting, risk premium, etc.)
+- Nuance matters: a description that correctly identifies the factor's theoretical \
+motivation from the research paper should score higher than a generic description \
+that is technically not wrong but lacks depth
+
+Rubric:
+1 = Completely wrong — describes a different factor or entirely wrong economic mechanism
+2 = Partially relevant — right general area (e.g., correct asset class) but misses \
+the core economic mechanism or hypothesis from the paper
+3 = Acceptable — captures the general idea but lacks the nuance of the paper's \
+specific contribution (e.g., says "predicts returns" without explaining why/how)
+4 = Good — accurately captures the purpose and economic mechanism, minor omissions \
+in nuance or context
+5 = Excellent — fully captures the factor's purpose, economic mechanism, and the \
+specific contribution or novelty as described in the research paper
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
 LOGIC_PROMPT = """\
-You are an expert evaluator for quantitative finance factor research.
+You are an expert evaluator for quantitative finance factor research, \
+specializing in academic paper replication and factor construction.
 
-Score the agent's COMPUTATION LOGIC description from 1 to 5 vs ground truth:
-1 = Completely wrong — different computation entirely
-2 = Partially relevant — some correct elements but missing critical steps
-3 = Acceptable — general approach correct but vague on key steps
-4 = Good — main computation steps accurate, minor omissions
-5 = Excellent — fully describes computation including sorting, variables, timing
+Score the agent's COMPUTATION LOGIC description from 1 to 5 vs ground truth.
+
+This is the most important evaluation dimension. Focus on whether the agent \
+correctly describes the FACTOR CONSTRUCTION LOGIC as specified in the research paper:
+
+Key evaluation criteria (in order of importance):
+1. VARIABLE CONSTRUCTION — Does the agent identify the correct input variables, \
+transformations, and how the signal is computed? (e.g., correct accounting ratios, \
+correct differencing/scaling, correct numerator/denominator)
+2. SORTING/PORTFOLIO METHODOLOGY — Does the agent describe the correct sorting \
+procedure (e.g., univariate sorts, double sorts, breakpoints, NYSE percentiles)?
+3. TIMING AND LAGS — Does the agent correctly specify when variables are measured \
+relative to portfolio formation (e.g., fiscal year-end lag, June rebalancing, \
+holding period)?
+4. SAMPLE FILTERS AND ADJUSTMENTS — Does the agent mention critical filters \
+(e.g., excluding financials, minimum price filters, industry adjustments)?
+5. NUANCE AND DETAIL — A response that captures the specific steps described in \
+the paper (even if paraphrased) should score higher than a vague or generic \
+description that could apply to many factors
+
+Rubric:
+1 = Completely wrong — describes a different computation entirely
+2 = Major gaps — some correct elements but missing critical construction steps \
+(e.g., wrong variable definition, missing the sorting methodology)
+3 = Acceptable — general approach is correct but vague on key specifics \
+(e.g., says "sort stocks" without specifying breakpoints or rebalancing frequency)
+4 = Good — captures the main construction steps with correct variable definitions \
+and methodology, minor omissions in detail (e.g., missing a filter condition)
+5 = Excellent — comprehensively describes the factor construction with correct \
+variable definitions, sorting methodology, timing conventions, and any critical \
+adjustments, closely aligned with the ground truth
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
 CODE_PROMPT = """\
 You are an expert evaluator for quantitative finance factor replication code.
 
-You will compare an agent-generated Python replication script against the
-reference implementation from the Open Source Asset Pricing project.
+You will compare an agent-generated Python replication script against the \
+reference implementation from the Open Source Asset Pricing (OSP) project.
 
-Score from 1 to 5 based on how well the agent code replicates the reference logic:
-1 = Completely wrong — computes a different signal, wrong data, wrong methodology
-2 = Major issues — right general idea but critical errors in computation (wrong variables, wrong sorting, wrong formula)
-3 = Acceptable — captures the core logic but has notable gaps (missing edge cases, wrong lag periods, missing industry adjustments, different scaling)
-4 = Good — closely replicates the reference with minor differences (different variable names, slightly different filtering, minor timing differences)
-5 = Excellent — faithfully replicates the reference logic, correct data sources, correct computation steps, correct output format
+IMPORTANT CONTEXT: The agent does NOT have access to the same data environment \
+as the OSP reference. Therefore:
+- Do NOT penalize for differences in data loading, file paths, column names, \
+or database connection boilerplate
+- Do NOT penalize for different import statements or library choices
+- Do NOT penalize for different variable naming conventions
+- DO focus on whether the CORE FACTOR CALCULATION LOGIC is correct
 
-Consider: correct data inputs, correct variable construction, correct lag/timing, correct formula, correct portfolio sorting/grouping, correct output.
+Score from 1 to 5 based on how well the agent code captures the correct \
+factor construction logic:
+
+Key evaluation criteria (in order of importance):
+1. SIGNAL COMPUTATION — Does the code compute the correct signal/variable? \
+(e.g., correct formula, correct ratio, correct transformation). This is the \
+most critical criterion.
+2. SORTING/PORTFOLIO LOGIC — If the factor involves portfolio sorts, does the \
+code implement the correct sorting methodology (breakpoints, quantiles, \
+long-short construction)?
+3. TIMING AND LAGS — Does the code correctly handle temporal alignment \
+(e.g., lagging accounting data, aligning fiscal year-end with returns)?
+4. CRITICAL FILTERS — Does the code implement essential sample restrictions \
+(e.g., excluding financials, price screens) that materially affect the factor?
+5. OUTPUT STRUCTURE — Does the code produce a signal or factor return that \
+aligns with what the reference computes?
+
+What to IGNORE:
+- Boilerplate code (imports, data loading, file I/O, database queries)
+- Syntax differences that don't affect computation logic
+- Different library choices (e.g., pandas vs numpy operations)
+- Variable naming conventions
+- Code style, comments, formatting
+- Missing data handling that differs only due to data environment
+
+Rubric:
+1 = Completely wrong — computes a fundamentally different signal or factor
+2 = Major issues — right general idea but critical errors in the core \
+calculation (wrong formula, wrong variables in computation, wrong \
+sorting methodology)
+3 = Acceptable — core signal computation is approximately correct but \
+notable gaps in methodology (missing lag adjustments, wrong breakpoints, \
+missing critical filters that materially affect results)
+4 = Good — correctly implements the core signal computation and methodology, \
+minor differences that would not substantially change the resulting factor \
+(e.g., slightly different winsorization, minor filter differences)
+5 = Excellent — faithfully implements the factor construction logic: correct \
+signal formula, correct sorting/portfolio methodology, correct timing, \
+and critical adjustments all present
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
