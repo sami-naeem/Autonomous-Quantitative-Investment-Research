@@ -290,6 +290,7 @@ else
     cd "${REPO_DIR}"
     git sparse-checkout set --no-cone \
         Agents/ \
+        eval/ \
         Sandbox/ \
         langgraph.json \
         requirements.txt \
