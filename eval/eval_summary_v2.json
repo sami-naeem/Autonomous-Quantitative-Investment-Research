@@ -1,0 +1,265 @@
+{
+  "total": 171,
+  "matched": 123,
+  "unmatched": 48,
+  "by_model": {
+    "base": {
+      "total": 57,
+      "matched": 41,
+      "theme_correct": 17,
+      "has_code": 41
+    },
+    "custom": {
+      "total": 57,
+      "matched": 41,
+      "theme_correct": 14,
+      "has_code": 41
+    },
+    "finllama": {
+      "total": 57,
+      "matched": 41,
+      "theme_correct": 13,
+      "has_code": 41
+    }
+  },
+  "theme_accuracy": {
+    "base": {
+      "correct": 17,
+      "total": 41,
+      "accuracy": 0.4146
+    },
+    "custom": {
+      "correct": 14,
+      "total": 41,
+      "accuracy": 0.3415
+    },
+    "finllama": {
+      "correct": 13,
+      "total": 41,
+      "accuracy": 0.3171
+    }
+  },
+  "llm_scores": {
+    "base": {
+      "purpose": {
+        "mean": 2.49,
+        "median": 2.0,
+        "std": 0.77,
+        "min": 1,
+        "max": 4,
+        "n": 41,
+        "dist": {
+          "1": 2,
+          "2": 22,
+          "3": 12,
+          "4": 5,
+          "5": 0
+        }
+      },
+      "logic": {
+        "mean": 1.15,
+        "median": 1.0,
+        "std": 0.35,
+        "min": 1,
+        "max": 2,
+        "n": 41,
+        "dist": {
+          "1": 35,
+          "2": 6,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        }
+      },
+      "code": {
+        "mean": 2.39,
+        "median": 2.0,
+        "std": 0.49,
+        "min": 2,
+        "max": 3,
+        "n": 41,
+        "dist": {
+          "1": 0,
+          "2": 25,
+          "3": 16,
+          "4": 0,
+          "5": 0
+        }
+      }
+    },
+    "custom": {
+      "purpose": {
+        "mean": 2.68,
+        "median": 3.0,
+        "std": 0.75,
+        "min": 1,
+        "max": 4,
+        "n": 41,
+        "dist": {
+          "1": 1,
+          "2": 17,
+          "3": 17,
+          "4": 6,
+          "5": 0
+        }
+      },
+      "logic": {
+        "mean": 1.17,
+        "median": 1.0,
+        "std": 0.38,
+        "min": 1,
+        "max": 2,
+        "n": 41,
+        "dist": {
+          "1": 34,
+          "2": 7,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        }
+      },
+      "code": {
+        "mean": 2.29,
+        "median": 2.0,
+        "std": 0.45,
+        "min": 2,
+        "max": 3,
+        "n": 41,
+        "dist": {
+          "1": 0,
+          "2": 29,
+          "3": 12,
+          "4": 0,
+          "5": 0
+        }
+      }
+    },
+    "finllama": {
+      "purpose": {
+        "mean": 2.66,
+        "median": 3.0,
+        "std": 0.68,
+        "min": 1,
+        "max": 4,
+        "n": 41,
+        "dist": {
+          "1": 2,
+          "2": 13,
+          "3": 23,
+          "4": 3,
+          "5": 0
+        }
+      },
+      "logic": {
+        "mean": 1.2,
+        "median": 1.0,
+        "std": 0.4,
+        "min": 1,
+        "max": 2,
+        "n": 41,
+        "dist": {
+          "1": 33,
+          "2": 8,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        }
+      },
+      "code": {
+        "mean": 2.46,
+        "median": 2.0,
+        "std": 0.59,
+        "min": 1,
+        "max": 4,
+        "n": 41,
+        "dist": {
+          "1": 1,
+          "2": 21,
+          "3": 18,
+          "4": 1,
+          "5": 0
+        }
+      }
+    }
+  },
+  "similarity": {
+    "base": {
+      "purpose": {
+        "mean": 0.5564,
+        "median": 0.5428,
+        "std": 0.1431,
+        "min": 0.2419,
+        "max": 0.8141,
+        "n": 41
+      },
+      "logic": {
+        "mean": 0.3786,
+        "median": 0.3697,
+        "std": 0.0964,
+        "min": 0.1795,
+        "max": 0.6118,
+        "n": 41
+      },
+      "code": {
+        "mean": 0.4068,
+        "median": 0.411,
+        "std": 0.0375,
+        "min": 0.3093,
+        "max": 0.4884,
+        "n": 41
+      }
+    },
+    "custom": {
+      "purpose": {
+        "mean": 0.4852,
+        "median": 0.4829,
+        "std": 0.1305,
+        "min": 0.1519,
+        "max": 0.7945,
+        "n": 41
+      },
+      "logic": {
+        "mean": 0.3835,
+        "median": 0.3568,
+        "std": 0.1078,
+        "min": 0.2168,
+        "max": 0.6265,
+        "n": 41
+      },
+      "code": {
+        "mean": 0.4225,
+        "median": 0.4406,
+        "std": 0.0532,
+        "min": 0.332,
+        "max": 0.5334,
+        "n": 41
+      }
+    },
+    "finllama": {
+      "purpose": {
+        "mean": 0.4938,
+        "median": 0.5168,
+        "std": 0.1562,
+        "min": 0.0118,
+        "max": 0.7831,
+        "n": 41
+      },
+      "logic": {
+        "mean": 0.3883,
+        "median": 0.3932,
+        "std": 0.1199,
+        "min": 0.1522,
+        "max": 0.6168,
+        "n": 40
+      },
+      "code": {
+        "mean": 0.4204,
+        "median": 0.4267,
+        "std": 0.0441,
+        "min": 0.3358,
+        "max": 0.4906,
+        "n": 41
+      }
+    }
+  }
+}
