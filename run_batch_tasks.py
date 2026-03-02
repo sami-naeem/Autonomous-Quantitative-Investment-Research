@@ -9,8 +9,6 @@ import logging
 import re
 from pathlib import Path
 from google.cloud import storage
-from sympy import python
-
 from Agents.agent import app
 from Agents.config import GCSConfig
 
@@ -172,7 +170,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch paper pipeline runner")
     parser.add_argument(
         "--model",
-        choices=["openai", "base", "finllama", "custom"],
+        choices=["openai", "anthropic", "gemini", "base", "finllama", "custom"],
         default="base",
         help="LLM to use for the pipeline (default: base)",
     )

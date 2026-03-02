@@ -1054,8 +1054,10 @@ def _run_react_json_agent(
 def validate_endpoint_node(state: AgentState) -> AgentState:
     model_choice = state.get("model_choice", "openai")
 
-    if model_choice == "openai":
-        logger.info("Using OpenAI — skipping endpoint validation.")
+    # Frontier cloud providers don't need vLLM endpoint validation
+    from Agents.provider_adapters import is_frontier_provider
+    if is_frontier_provider(model_choice):
+        logger.info(f"Using frontier provider '{model_choice}' — skipping endpoint validation.")
         return {"endpoint_valid": True, "endpoint_error": ""}
 
     llm = get_llm_by_name(model_choice)

@@ -286,6 +286,11 @@ Focus on:
 (e.g., risk-based vs behavioral, why the factor should predict returns)
 - Whether the agent identifies the correct ASSET PRICING CONTEXT \
 (cross-sectional return prediction, portfolio sorting, risk premium, etc.)
+- Whether the agent NAMES THE SPECIFIC VARIABLES or signals used by the factor \
+(e.g., "book-to-market ratio" rather than just "value", or "change in total assets" \
+rather than just "investment"). Specificity about what is measured matters.
+- Whether the agent explains the DIRECTION of the predicted relationship \
+(e.g., "high accruals predict lower returns" not just "accruals predict returns")
 - Nuance matters: a description that correctly identifies the factor's theoretical \
 motivation from the research paper should score higher than a generic description \
 that is technically not wrong but lacks depth
@@ -294,12 +299,15 @@ Rubric:
 1 = Completely wrong — describes a different factor or entirely wrong economic mechanism
 2 = Partially relevant — right general area (e.g., correct asset class) but misses \
 the core economic mechanism or hypothesis from the paper
-3 = Acceptable — captures the general idea but lacks the nuance of the paper's \
-specific contribution (e.g., says "predicts returns" without explaining why/how)
-4 = Good — accurately captures the purpose and economic mechanism, minor omissions \
-in nuance or context
-5 = Excellent — fully captures the factor's purpose, economic mechanism, and the \
-specific contribution or novelty as described in the research paper
+3 = Acceptable — captures the general idea but lacks specificity (e.g., says \
+"predicts returns" without explaining why/how, or names the broad category but \
+not the specific signal)
+4 = Good — accurately captures the purpose, economic mechanism, names the key \
+variables, and indicates the direction of the return relationship. Minor omissions \
+in nuance or context.
+5 = Excellent — fully captures the factor's purpose, economic mechanism, specific \
+variables, direction of prediction, and the specific contribution or novelty as \
+described in the research paper
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
@@ -310,7 +318,7 @@ specializing in academic paper replication and factor construction.
 Score the agent's COMPUTATION LOGIC description from 1 to 5 vs ground truth.
 
 This is the most important evaluation dimension. Focus on whether the agent \
-correctly describes the FACTOR CONSTRUCTION LOGIC as specified in the research paper:
+correctly describes the FACTOR CONSTRUCTION LOGIC as specified in the research paper.
 
 Key evaluation criteria (in order of importance):
 1. VARIABLE CONSTRUCTION — Does the agent identify the correct input variables, \
@@ -323,21 +331,33 @@ relative to portfolio formation (e.g., fiscal year-end lag, June rebalancing, \
 holding period)?
 4. SAMPLE FILTERS AND ADJUSTMENTS — Does the agent mention critical filters \
 (e.g., excluding financials, minimum price filters, industry adjustments)?
-5. NUANCE AND DETAIL — A response that captures the specific steps described in \
-the paper (even if paraphrased) should score higher than a vague or generic \
-description that could apply to many factors
+5. COMPLETENESS OF COVERAGE — A response that covers ALL of signal construction, \
+universe definition, timing/rebalancing, AND portfolio construction as separate \
+concerns should score higher than one that addresses only some of these areas, \
+even if each area is individually correct.
+6. EVIDENCE GROUNDING — A response that attributes specific claims to the paper \
+(via direct quotes, section references, or explicit notes about which details \
+come from the paper vs. standard conventions) should score higher than one \
+making unsupported assertions. Responses that clearly distinguish what the \
+paper specifies from what is assumed by convention demonstrate deeper \
+understanding of the source material.
 
 Rubric:
 1 = Completely wrong — describes a different computation entirely
 2 = Major gaps — some correct elements but missing critical construction steps \
 (e.g., wrong variable definition, missing the sorting methodology)
 3 = Acceptable — general approach is correct but vague on key specifics \
-(e.g., says "sort stocks" without specifying breakpoints or rebalancing frequency)
+(e.g., says "sort stocks" without specifying breakpoints or rebalancing frequency). \
+Covers fewer than 3 of the 4 key areas (signal, universe, timing, portfolio).
 4 = Good — captures the main construction steps with correct variable definitions \
-and methodology, minor omissions in detail (e.g., missing a filter condition)
+and methodology, covers at least 3 of the 4 key areas. Minor omissions in detail \
+(e.g., missing a filter condition). Distinguishes at least some paper-stated \
+details from assumed conventions.
 5 = Excellent — comprehensively describes the factor construction with correct \
 variable definitions, sorting methodology, timing conventions, and any critical \
-adjustments, closely aligned with the ground truth
+adjustments. Covers all 4 key areas (signal, universe, timing, portfolio). \
+Clearly indicates which details come from the paper and which are standard \
+conventions applied where the paper is silent.
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
@@ -369,7 +389,13 @@ long-short construction)?
 (e.g., lagging accounting data, aligning fiscal year-end with returns)?
 4. CRITICAL FILTERS — Does the code implement essential sample restrictions \
 (e.g., excluding financials, price screens) that materially affect the factor?
-5. OUTPUT STRUCTURE — Does the code produce a signal or factor return that \
+5. ASSUMPTIONS AND ROBUSTNESS — Does the code explicitly document its \
+assumptions (e.g., in comments or a header block)? Does it include sanity \
+checks or assertions that verify the output is reasonable (e.g., checking \
+for NaN, verifying enough observations, checking return magnitudes)? Code \
+that makes its reasoning transparent and self-validates should score higher \
+than code that silently produces results.
+6. OUTPUT STRUCTURE — Does the code produce a signal or factor return that \
 aligns with what the reference computes?
 
 What to IGNORE:
@@ -377,7 +403,7 @@ What to IGNORE:
 - Syntax differences that don't affect computation logic
 - Different library choices (e.g., pandas vs numpy operations)
 - Variable naming conventions
-- Code style, comments, formatting
+- Code style, comments, formatting (except for assumption documentation)
 - Missing data handling that differs only due to data environment
 
 Rubric:
@@ -387,13 +413,16 @@ calculation (wrong formula, wrong variables in computation, wrong \
 sorting methodology)
 3 = Acceptable — core signal computation is approximately correct but \
 notable gaps in methodology (missing lag adjustments, wrong breakpoints, \
-missing critical filters that materially affect results)
+missing critical filters that materially affect results). No documentation \
+of assumptions or sanity checks.
 4 = Good — correctly implements the core signal computation and methodology, \
-minor differences that would not substantially change the resulting factor \
-(e.g., slightly different winsorization, minor filter differences)
+minor differences that would not substantially change the resulting factor. \
+Documents at least some assumptions. May include basic output validation.
 5 = Excellent — faithfully implements the factor construction logic: correct \
 signal formula, correct sorting/portfolio methodology, correct timing, \
-and critical adjustments all present
+and critical adjustments all present. Clearly documents assumptions where \
+the paper description was ambiguous. Includes sanity checks that would \
+catch common implementation errors.
 
 Respond ONLY with JSON: {"score": <int 1-5>, "reasoning": "<brief>"}"""
 
@@ -514,6 +543,59 @@ def eval_factor(
         "purpose_len_agent": len(ap), "logic_len_agent": len(al),
     }
 
+    # ── Structural quality metrics (model-agnostic) ──────────────────
+    # These measure output characteristics that correlate with quality
+    # and are rewarded by the v4 prompt design.
+    al_lower = al.lower()
+
+    # Topic coverage: does the logic address each of the 4 key areas?
+    topic_coverage = {
+        "signal": any(w in al_lower for w in [
+            "ratio", "signal", "variable", "formula", "computed",
+            "numerator", "denominator", "transform", "standardiz",
+            "winsoriz", "log ", "difference", "change in",
+        ]),
+        "universe": any(w in al_lower for w in [
+            "universe", "filter", "exclud", "financials", "utilities",
+            "common stock", "nyse", "amex", "nasdaq", "exchange",
+            "market cap", "price filter", "penny",
+        ]),
+        "timing": any(w in al_lower for w in [
+            "rebalanc", "holding period", "formation", "lag",
+            "monthly", "quarterly", "annual", "june",
+            "look-ahead", "fiscal year",
+        ]),
+        "portfolio": any(w in al_lower for w in [
+            "sort", "decile", "quintile", "tercile", "quantile",
+            "breakpoint", "long-short", "long short", "top", "bottom",
+            "equal-weight", "value-weight", "portfolio",
+        ]),
+    }
+    result["topic_coverage"] = topic_coverage
+    result["topic_coverage_count"] = sum(topic_coverage.values())
+
+    # Provenance awareness: does the logic distinguish paper-stated vs assumed?
+    provenance_signals = {
+        "evidence_tags": len(re.findall(r'\[EVIDENCE:', al, re.IGNORECASE)),
+        "convention_tags": len(re.findall(r'\[CONVENTION:', al, re.IGNORECASE)),
+        "missing_tags": len(re.findall(r'\[MISSING:', al, re.IGNORECASE)),
+        "convention_notes": len(re.findall(r'standard convention:', al_lower)),
+        "not_specified_notes": len(re.findall(r'not specified', al_lower)),
+    }
+    result["provenance_signals"] = provenance_signals
+    result["has_provenance"] = any(v > 0 for v in provenance_signals.values())
+
+    # Paragraph structure: count distinct paragraphs (proxy for structured thinking)
+    paragraphs = [p.strip() for p in al.split('\n\n') if p.strip() and len(p.strip()) > 20]
+    if len(paragraphs) <= 1:
+        # Try single-newline split for models that use single newlines
+        paragraphs = [p.strip() for p in al.split('\n') if p.strip() and len(p.strip()) > 40]
+    result["paragraph_count"] = len(paragraphs)
+
+    # Word count (longer, more detailed responses tend to be better)
+    result["logic_word_count"] = len(re.findall(r'[A-Za-z]+', al))
+    result["purpose_word_count"] = len(re.findall(r'[A-Za-z]+', ap))
+
     if use_sim:
         s = get_scorer()
         result["purpose_cosine_sim"] = s.score(ap, gp)
@@ -549,6 +631,37 @@ def eval_code(
         "agent_code_lines": len(agent_code.splitlines()),
         "ref_code_lines": len(ref_code.splitlines()),
     }
+
+    # ── Structural code quality metrics ──────────────────────────────
+    code_lower = agent_code.lower()
+
+    # Assumption documentation: does the code explicitly state its assumptions?
+    assumption_lines = [
+        line for line in agent_code.splitlines()
+        if re.search(r'#\s*(assumption|assume|convention|paper does not|not specified)',
+                      line, re.IGNORECASE)
+    ]
+    result["assumption_count"] = len(assumption_lines)
+    result["has_assumptions_block"] = bool(re.search(
+        r'#\s*ASSUMPTIONS?\s*:', agent_code, re.IGNORECASE
+    ))
+
+    # Sanity checks: does the code include assertions or validation?
+    assert_count = len(re.findall(r'\bassert\b', agent_code))
+    result["assert_count"] = assert_count
+
+    # Diagnostic prints: does the code include diagnostic output?
+    diagnostic_prints = len(re.findall(
+        r'print\s*\(.*(?:len|shape|columns|count|sum|mean|debug|signal|portfolio)',
+        code_lower,
+    ))
+    result["diagnostic_print_count"] = diagnostic_prints
+
+    # Key implementation patterns
+    result["has_usecols"] = "usecols" in code_lower
+    result["has_shift_lag"] = ".shift(" in code_lower
+    result["has_pivot"] = "pivot" in code_lower
+    result["uses_wide_format"] = "pivot_table" in code_lower or "pivot(" in code_lower
 
     if use_sim:
         result["code_cosine_sim"] = get_scorer().score(agent_code, ref_code)
@@ -720,6 +833,63 @@ def _aggregate_summary(results, summary, use_sim, use_llm):
                     }
             summary["similarity"][model] = model_stats
 
+    # ── Structural quality metrics (v4) ──────────────────────────────
+    structural = defaultdict(lambda: {
+        "topic_coverage": [], "provenance_pct": 0, "provenance_total": 0,
+        "logic_word_count": [], "purpose_word_count": [],
+        "paragraph_count": [],
+        "assert_count": [], "assumption_count": [],
+        "has_assumptions_block": 0, "code_n": 0,
+    })
+
+    for e in results:
+        model = e["model_choice"]
+        t2 = e.get("task2") or {}
+        t3 = e.get("task3_code") or {}
+
+        if t2.get("topic_coverage_count") is not None:
+            structural[model]["topic_coverage"].append(t2["topic_coverage_count"])
+        if t2.get("has_provenance") is not None:
+            structural[model]["provenance_total"] += 1
+            if t2["has_provenance"]:
+                structural[model]["provenance_pct"] += 1
+        if t2.get("logic_word_count") is not None:
+            structural[model]["logic_word_count"].append(t2["logic_word_count"])
+        if t2.get("purpose_word_count") is not None:
+            structural[model]["purpose_word_count"].append(t2["purpose_word_count"])
+        if t2.get("paragraph_count") is not None:
+            structural[model]["paragraph_count"].append(t2["paragraph_count"])
+
+        if t3 and t3.get("has_agent_code"):
+            structural[model]["code_n"] += 1
+            if t3.get("assert_count") is not None:
+                structural[model]["assert_count"].append(t3["assert_count"])
+            if t3.get("assumption_count") is not None:
+                structural[model]["assumption_count"].append(t3["assumption_count"])
+            if t3.get("has_assumptions_block"):
+                structural[model]["has_assumptions_block"] += 1
+
+    summary["structural_quality"] = {}
+    for model, s in structural.items():
+        entry = {}
+        for field in ("topic_coverage", "logic_word_count", "purpose_word_count",
+                       "paragraph_count", "assert_count", "assumption_count"):
+            vals = s[field]
+            if vals:
+                entry[field] = {
+                    "mean": round(float(np.mean(vals)), 2),
+                    "median": round(float(np.median(vals)), 1),
+                }
+        if s["provenance_total"] > 0:
+            entry["provenance_pct"] = round(
+                s["provenance_pct"] / s["provenance_total"] * 100, 1
+            )
+        if s["code_n"] > 0:
+            entry["assumptions_block_pct"] = round(
+                s["has_assumptions_block"] / s["code_n"] * 100, 1
+            )
+        summary["structural_quality"][model] = entry
+
 
 # ═════════════════════════════════════════════════════════════════════════
 # Print Summary
@@ -751,6 +921,36 @@ def print_summary(summary: Dict):
                 print(f"    {field:12s}: mean={s['mean']:.2f}  "
                       f"median={s['median']:.1f}  std={s['std']:.2f}  "
                       f"[{s['min']}-{s['max']}]  n={s['n']}  ({dist_str})")
+
+    if summary.get("structural_quality"):
+        print(f"\n{'─' * 80}")
+        print("Structural Quality Metrics:")
+        for model, sq in summary["structural_quality"].items():
+            print(f"  {model}:")
+            if "topic_coverage" in sq:
+                tc = sq["topic_coverage"]
+                print(f"    topic_coverage:    mean={tc['mean']:.1f}/4  "
+                      f"median={tc['median']:.0f}/4")
+            if "logic_word_count" in sq:
+                wc = sq["logic_word_count"]
+                print(f"    logic_words:       mean={wc['mean']:.0f}  "
+                      f"median={wc['median']:.0f}")
+            if "paragraph_count" in sq:
+                pc = sq["paragraph_count"]
+                print(f"    paragraphs:        mean={pc['mean']:.1f}  "
+                      f"median={pc['median']:.0f}")
+            if "provenance_pct" in sq:
+                print(f"    has_provenance:    {sq['provenance_pct']:.0f}%")
+            if "assert_count" in sq:
+                ac = sq["assert_count"]
+                print(f"    code_asserts:      mean={ac['mean']:.1f}  "
+                      f"median={ac['median']:.0f}")
+            if "assumption_count" in sq:
+                asc = sq["assumption_count"]
+                print(f"    assumption_lines:  mean={asc['mean']:.1f}  "
+                      f"median={asc['median']:.0f}")
+            if "assumptions_block_pct" in sq:
+                print(f"    assumptions_block: {sq['assumptions_block_pct']:.0f}%")
 
     if summary.get("similarity"):
         print(f"\n{'─' * 80}")

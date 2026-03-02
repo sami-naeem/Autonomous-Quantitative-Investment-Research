@@ -124,7 +124,7 @@ LOCAL_JSON_FILE = os.getenv("LOCAL_JSON_FILE", "eval/osp_eval_policy_v003.json")
 OUTPUT_BUCKET = os.getenv("GCS_OUTPUT_BUCKET", "investment-research-output")
 
 # Valid model choices (used for listing and prefix construction)
-VALID_MODELS = ["base", "custom", "finllama"]
+VALID_MODELS = ["base", "custom", "finllama", "openai", "anthropic", "gemini"]
 
 # Sharadar data directory (on Lambda / local dev)
 DATA_DIR = os.getenv("SHARADAR_DATA_DIR", "/home/ubuntu/data/sharadar")
@@ -717,13 +717,24 @@ SYSTEM_MSG = (
 def _get_llm(model_choice: str = DEFAULT_MODEL):
     """Return a LangChain-compatible LLM with .invoke().
 
-    Resolution: Agents.llm_config → langchain-anthropic fallback.
+    Resolution order:
+        1. Agents.llm_config.get_llm_by_name (handles all providers incl. frontier)
+        2. Agents.provider_adapters for frontier providers (fallback if llm_config unavailable)
+        3. langchain-anthropic hardcoded fallback
     """
     if get_llm_by_name is not None:
         try:
             return get_llm_by_name(model_choice)
         except Exception as e:
             logger.warning(f"get_llm_by_name('{model_choice}') failed: {e}")
+
+    # Fallback: try frontier provider adapters directly
+    try:
+        from Agents.provider_adapters import is_frontier_provider, get_frontier_llm
+        if is_frontier_provider(model_choice):
+            return get_frontier_llm(model_choice, temperature=0.2, max_tokens=8192)
+    except ImportError:
+        pass
 
     try:
         from langchain_anthropic import ChatAnthropic
@@ -1310,7 +1321,7 @@ def main():
     )
     parser.add_argument(
         "--model",
-        choices=["openai", "base", "finllama", "custom"],
+        choices=["openai", "anthropic", "gemini", "base", "finllama", "custom"],
         default=DEFAULT_MODEL,
         help=f"LLM for generation + sandbox fixing (default: {DEFAULT_MODEL}).",
     )

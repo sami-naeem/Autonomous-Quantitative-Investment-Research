@@ -1,0 +1,8 @@
+
+# secrets
+service-account-key*.json
+*service-account*.json
+
+# macOS junk
+.DS_Store
+**/.DS_Store
